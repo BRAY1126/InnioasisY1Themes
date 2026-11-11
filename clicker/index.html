@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=240, initial-scale=1, user-scalable=no">
+<meta name="robots" content="noindex">
+<title>Groovy Grow</title>
+<style>
+/* Sized for the Nintendo DSi / 3DS browsers (240-320px wide). Plain CSS, solid-color fallbacks. */
+body{margin:0;padding:2px;background:#2a0a3d;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:12px;width:236px}
+h1{margin:0;font-size:15px;text-align:center;letter-spacing:1px}
+#top{background:#5a1a7a;border:2px solid #ff4fd8;padding:3px;text-align:center}
+#count{font-size:18px;font-weight:bold;color:#b6ff4f}
+#rate{font-size:11px;color:#ffd1f5}
+#clickBtn{display:block;width:100%;height:56px;margin:3px 0;font-size:16px;font-weight:bold;background:#7cff4f;color:#3a0a55;border:3px solid #ff8a00}
+.row{display:block;width:100%;margin:2px 0;padding:3px;text-align:left;font-size:11px;color:#2a0a3d;border:1px solid #3a0a55}
+.row b{font-size:12px}
+.row .c{float:right;font-weight:bold}
+.k0{background:#ffb3e6}.k1{background:#ffe08a}.k2{background:#b6ff9e}.k3{background:#9ee7ff}.k4{background:#d6b3ff}
+.no{background:#6b5a78;color:#2a1a38}
+#bar{margin-top:3px}
+#bar input{width:32%;font-size:11px;height:22px;background:#ff8a00;color:#2a0a3d;border:1px solid #ffd1f5}
+#msg{height:14px;font-size:11px;color:#ffe08a;text-align:center}
+#boss{display:none;background:#fff;color:#000;font-size:10px;font-family:Arial,sans-serif}
+#boss table{border-collapse:collapse;width:100%}
+#boss td{border:1px solid #bbb;padding:1px 2px}
+#boss .h{background:#dfe6ee;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="game">
+ <div id="top">
+  <h1 id="title">GROOVY GROW</h1>
+  <div id="count">0</div>
+  <div>buds harvested</div>
+  <div id="rate">0 per sec</div>
+ </div>
+ <input type="button" id="clickBtn" value="~ PICK A BUD ~" onclick="doClick()">
+ <div id="msg"></div>
+ <div id="shop"></div>
+ <div id="bar">
+  <input type="button" value="Boss!" onclick="toggleBoss()">
+  <input type="button" value="Save" onclick="save();say('Saved.')">
+  <input type="button" value="Reset" onclick="resetGame()">
+ </div>
+</div>
+
+<div id="boss" onclick="toggleBoss()">
+ <table>
+  <tr class="h"><td>Q3_Budget.xls</td><td>Jul</td><td>Aug</td><td>Sep</td></tr>
+  <tr><td>Revenue</td><td>41,200</td><td>43,915</td><td>44,080</td></tr>
+  <tr><td>Payroll</td><td>18,450</td><td>18,450</td><td>19,020</td></tr>
+  <tr><td>Supplies</td><td>1,212</td><td>988</td><td>1,340</td></tr>
+  <tr><td>Travel</td><td>2,780</td><td>3,115</td><td>2,240</td></tr>
+  <tr><td>Software</td><td>4,300</td><td>4,300</td><td>4,450</td></tr>
+  <tr><td>Misc</td><td>615</td><td>702</td><td>590</td></tr>
+  <tr class="h"><td>Net</td><td>13,843</td><td>16,360</td><td>16,440</td></tr>
+  <tr><td>Variance</td><td>-2.1%</td><td>+3.4%</td><td>+0.5%</td></tr>
+  <tr><td>Forecast</td><td>on track</td><td>on track</td><td>review</td></tr>
+ </table>
+</div>
+
+<script type="text/javascript">
+// Written in old-style JavaScript (no let/const/arrows/JSON) so it runs on the DSi browser.
+var ITEMS = [
+ {n:"Seedling Pot",   d:"A tiny sprout with big dreams.", cost:15,      rate:0.1},
+ {n:"Hippie Helper",  d:"Plays bongos while trimming.",   cost:100,     rate:1},
+ {n:"Grow Lamp",      d:"Purple light, good vibes.",      cost:1100,    rate:8},
+ {n:"Greenhouse",     d:"Foggy windows, happy plants.",   cost:12000,   rate:47},
+ {n:"Peace Van",      d:"Delivers buds and good vibes.",  cost:130000,  rate:260},
+ {n:"Hilltop Commune",d:"Free love, freer harvests.",     cost:1400000, rate:1400},
+ {n:"Cosmic Field",   d:"The universe farms itself, man.",cost:20000000,rate:7800}
+];
+var CLICK_NAMES = ["Rusty Shears","Tie-Dye Gloves","Crystal Trimmers","Lava Lamp Focus","Third Eye","Golden Sickle"];
+var MAX_OFFLINE = 8 * 3600; // seconds of offline earnings, max
+
+var s = {reports:0, total:0, clickLvl:0, owned:[], last:0};
+
+function el(id){ return document.getElementById(id); }
+
+function fmt(n){
+ n = Math.floor(n);
+ var u = ["","K","M","B","T","Qa","Qi"], i = 0;
+ if (n < 10000) return "" + n;
+ while (n >= 1000 && i < u.length - 1){ n = n / 1000; i++; }
+ return (n < 100 ? Math.floor(n * 10) / 10 : Math.floor(n)) + u[i];
+}
+function fmtRate(r){ return r < 10 ? Math.round(r * 10) / 10 : fmt(r); }
+
+function itemCost(i){ return Math.ceil(ITEMS[i].cost * Math.pow(1.15, s.owned[i])); }
+function clickCost(){ return Math.ceil(50 * Math.pow(6, s.clickLvl)); }
+function clickPower(){ return Math.pow(2, s.clickLvl); }
+function perSec(){
+ var r = 0, i;
+ for (i = 0; i < ITEMS.length; i++) r += ITEMS[i].rate * s.owned[i];
+ return r;
+}
+
+function add(n){ s.reports += n; s.total += n; }
+
+function doClick(){ add(clickPower()); draw(); }
+
+function buy(i){
+ var c = itemCost(i);
+ if (s.reports < c) { say("Need " + fmt(c - s.reports) + " more buds, man."); return; }
+ s.reports -= c; s.owned[i]++;
+ say("Far out! Got a " + ITEMS[i].n + ".");
+ draw();
+}
+function buyClick(){
+ var c = clickCost();
+ if (s.clickLvl >= CLICK_NAMES.length) return;
+ if (s.reports < c) { say("Need " + fmt(c - s.reports) + " more buds, man."); return; }
+ s.reports -= c; s.clickLvl++;
+ say("Groovy! Picks now worth " + clickPower() + ".");
+ buildShop(); draw();
+}
+
+var msgTimer = null;
+function say(t){
+ el("msg").innerHTML = t;
+ if (msgTimer) clearTimeout(msgTimer);
+ msgTimer = setTimeout(function(){ el("msg").innerHTML = ""; }, 2500);
+}
+
+function buildShop(){
+ var h = "", i;
+ if (s.clickLvl < CLICK_NAMES.length){
+  h += '<div class="row" id="r_c" onclick="buyClick()"><span class="c" id="c_c"></span>' +
+       '<b>' + CLICK_NAMES[s.clickLvl] + '</b><br>Picks x2</div>';
+ }
+ for (i = 0; i < ITEMS.length; i++){
+  h += '<div class="row" id="r_' + i + '" onclick="buy(' + i + ')"><span class="c" id="c_' + i + '"></span>' +
+       '<b>' + ITEMS[i].n + '</b> <span id="o_' + i + '"></span><br>' + ITEMS[i].d +
+       ' (+' + ITEMS[i].rate + '/s)</div>';
+ }
+ el("shop").innerHTML = h;
+}
+
+function draw(){
+ var i, c, row;
+ el("count").innerHTML = fmt(s.reports);
+ el("rate").innerHTML = fmtRate(perSec()) + " buds/sec &middot; " + clickPower() + " per pick";
+ if (el("r_c")){
+  c = clickCost();
+  el("c_c").innerHTML = fmt(c);
+  el("r_c").className = s.reports >= c ? "row k4" : "row no";
+ }
+ for (i = 0; i < ITEMS.length; i++){
+  row = el("r_" + i);
+  // Keep later items hidden until you can almost afford them.
+  row.style.display = (i === 0 || s.owned[i] > 0 || s.owned[i - 1] > 0 || s.total >= ITEMS[i].cost * 0.5) ? "block" : "none";
+  c = itemCost(i);
+  el("c_" + i).innerHTML = fmt(c);
+  el("o_" + i).innerHTML = s.owned[i] ? "x" + s.owned[i] : "";
+  row.className = s.reports >= c ? "row k" + (i % 5) : "row no";
+ }
+}
+
+// ---- Saving: localStorage when available, cookie as a fallback (DSi) ----
+function encode(){
+ return [s.reports, s.total, s.clickLvl, s.owned.join("_"), new Date().getTime()].join("|");
+}
+function decode(str){
+ var p = str.split("|"), o, i;
+ if (p.length < 5) return false;
+ s.reports = parseFloat(p[0]) || 0;
+ s.total = parseFloat(p[1]) || 0;
+ s.clickLvl = parseInt(p[2], 10) || 0;
+ o = p[3].split("_");
+ for (i = 0; i < ITEMS.length; i++) s.owned[i] = parseInt(o[i], 10) || 0;
+ s.last = parseFloat(p[4]) || 0;
+ return true;
+}
+function save(){
+ var d = encode();
+ try { if (window.localStorage) localStorage.setItem("groovygrow", d); } catch (e) {}
+ var exp = new Date(); exp.setTime(exp.getTime() + 3650 * 86400000);
+ document.cookie = "groovygrow=" + escape(d) + "; expires=" + exp.toGMTString() + "; path=/";
+}
+function load(){
+ var d = null, m;
+ try { if (window.localStorage) d = localStorage.getItem("groovygrow"); } catch (e) {}
+ if (!d){
+  m = document.cookie.match(/(?:^|;\s*)groovygrow=([^;]*)/);
+  if (m) d = unescape(m[1]);
+ }
+ return d ? decode(d) : false;
+}
+function resetGame(){
+ if (!confirm("Burn the whole farm and start over?")) return;
+ s.reports = 0; s.total = 0; s.clickLvl = 0;
+ for (var i = 0; i < ITEMS.length; i++) s.owned[i] = 0;
+ save(); buildShop(); draw(); say("New season, new seeds.");
+}
+
+var bossOn = false;
+function toggleBoss(){
+ bossOn = !bossOn;
+ el("game").style.display = bossOn ? "none" : "block";
+ el("boss").style.display = bossOn ? "block" : "none";
+}
+
+// Psychedelic title: each letter cycles through the rainbow.
+var RAINBOW = ["#ff4fd8","#ff8a00","#ffe08a","#7cff4f","#4fd8ff","#b37cff"], hue = 0;
+function trip(){
+ var t = "GROOVY GROW", h = "", i;
+ for (i = 0; i < t.length; i++) h += '<span style="color:' + RAINBOW[(i + hue) % RAINBOW.length] + '">' + t.charAt(i) + '</span>';
+ el("title").innerHTML = h;
+ hue++;
+}
+
+// ---- Start up ----
+var i0;
+for (i0 = 0; i0 < ITEMS.length; i0++) s.owned[i0] = 0;
+if (load() && s.last){
+ var away = Math.min((new Date().getTime() - s.last) / 1000, MAX_OFFLINE);
+ var earned = away > 60 ? perSec() * away : 0;
+ if (earned >= 1){ add(earned); setTimeout(function(){ say("Your farm grew +" + fmt(earned) + " while away."); }, 100); }
+}
+buildShop();
+draw();
+trip();
+
+var lastTick = new Date().getTime(), ticks = 0;
+setInterval(function(){
+ var now = new Date().getTime();
+ var dt = (now - lastTick) / 1000;
+ lastTick = now;
+ if (dt > 0 && dt < 60) add(perSec() * dt);
+ if (!bossOn){ draw(); trip(); }
+ ticks++;
+ if (ticks % 20 === 0) save(); // autosave every ~10s
+}, 500);
+window.onunload = save;
+</script>
+</body>
+</html>

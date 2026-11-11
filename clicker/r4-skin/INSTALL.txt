@@ -1,0 +1,19 @@
+NEURODECK - cyberdeck skin for the R4 menu
+==========================================
+
+This is for R4 cards running the "Wood R4" menu (most gold R4 SDHC
+3DS/DSi cards). Check: the R4's microSD card should have a folder
+called  __rpg  with a  ui  folder inside it.
+
+INSTALL (on your computer, R4 microSD plugged in)
+  1. Open  __rpg/ui/  on the microSD. You'll see the skin folders
+     already there (e.g. "zelda", "Acekard Black", ...).
+  2. Make a copy of any one of those folders and rename the copy
+     to  NeuroDeck  . (Copying keeps all the small icons/buttons.)
+  3. Copy  upper_screen.bmp  and  lower_screen.bmp  from this zip
+     into  __rpg/ui/NeuroDeck/  and replace the files there.
+  4. Put the card back, boot the R4, press START > System Settings
+     (the gear) > UI/Skin, choose  NeuroDeck  , and confirm.
+
+If it looks wrong or won't load, just switch back to your old
+skin in the same menu - nothing else on the card is touched.

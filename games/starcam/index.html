@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>StarCam — a stargazing camera game</title>
+<style>
+  :root { --shell:#1d2340; --shell2:#141933; --rim:#2c3563; --accent:#ffd36b; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:radial-gradient(ellipse at top,#1a1f3d 0%,#05060f 70%); color:#cfd6ff;
+    font-family: ui-monospace, Menlo, Consolas, monospace; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+  #wrap { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+  .shell { background:linear-gradient(180deg,var(--shell),var(--shell2)); border:2px solid var(--rim); border-radius:18px;
+    padding:14px 18px; box-shadow:0 10px 40px #0008, inset 0 1px 0 #ffffff22; position:relative; }
+  .shell.upper { border-bottom-left-radius:6px; border-bottom-right-radius:6px; padding-top:20px; }
+  .shell.lower { border-top-left-radius:6px; border-top-right-radius:6px; padding-bottom:20px; }
+  .hinge { width:min(92vw,560px); height:10px; margin:-10px 0; border-radius:6px; background:linear-gradient(90deg,#0b0e1f,#2c3563,#0b0e1f); z-index:2 }
+  .lens { position:absolute; top:6px; left:50%; transform:translateX(-50%); width:9px; height:9px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%,#7fa6ff,#0a0f2a 70%); box-shadow:0 0 0 2px #0b0e1f; }
+  .led { position:absolute; top:8px; right:18px; width:6px; height:6px; border-radius:50%; background:#52ff9a; box-shadow:0 0 6px #52ff9a; }
+  canvas { display:block; image-rendering:pixelated; border-radius:3px; background:#000;
+    width:min(86vw, calc((100vh - 120px) / 2 * 4 / 3), 512px); aspect-ratio:4/3; box-shadow:0 0 0 3px #0b0e1f; }
+  .brand { position:absolute; bottom:3px; left:50%; transform:translateX(-50%); font-size:9px; letter-spacing:3px; color:#7d87c9; }
+  #help { font-size:11px; color:#7d87c9; text-align:center; max-width:560px; padding:0 10px; }
+  #help b { color:#cfd6ff; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="shell upper"><div class="lens"></div><div class="led"></div><canvas id="top" width="512" height="384"></canvas></div>
+  <div class="hinge"></div>
+  <div class="shell lower"><canvas id="bot" width="512" height="384"></canvas><div class="brand">S T A R C A M</div></div>
+  <div id="help"><b>Arrows/WASD</b> or drag the sky to aim · <b>Q/E</b> or wheel to zoom · <b>Space</b> to take a photo · <b>[ ]</b> to change target · <b>G</b> guide lines · <b>P</b> album</div>
+</div>
+<script>
+(() => {
+'use strict';
+const W = 256, H = 192, DPR = 2;
+const topC = document.getElementById('top'), botC = document.getElementById('bot');
+const T = topC.getContext('2d'), B = botC.getContext('2d');
+T.scale(DPR, DPR); B.scale(DPR, DPR);
+const D2R = Math.PI / 180;
+
+// ---------- seeded RNG ----------
+let seed = 1337;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+
+// ---------- sky data (RA deg, Dec deg, magnitude) ----------
+const CONST = [
+  { id:'orion', name:'Orion', hint:'The Hunter. Look for three bright stars in a row: his Belt. Red Betelgeuse marks one shoulder.',
+    stars:[[88.8,7.4,0.5],[81.3,6.3,1.6],[85.2,-1.9,1.8],[84.1,-1.2,1.7],[83.0,-0.3,2.2],[86.9,-9.7,2.1],[78.6,-8.2,0.1],[83.8,9.9,3.4]],
+    lines:[[7,0],[7,1],[0,2],[1,4],[4,3],[3,2],[2,5],[4,6]], colors:{0:'#ffb38a',6:'#bcd4ff'} },
+  { id:'dipper', name:'Big Dipper', hint:'Seven stars shaped like a ladle, high in the north. The two end stars of the bowl point to the North Star.',
+    stars:[[165.9,61.8,1.8],[165.5,56.4,2.4],[178.5,53.7,2.4],[183.9,57.0,3.3],[193.5,56.0,1.8],[200.9,54.9,2.2],[206.9,49.3,1.9]],
+    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]] },
+  { id:'cas', name:'Cassiopeia', hint:'The Queen: a bright W (or M) shape. It sits across the North Star from the Big Dipper.',
+    stars:[[2.3,59.1,2.3],[10.1,56.5,2.2],[14.2,60.7,2.5],[21.5,60.2,2.7],[28.6,63.7,3.4]],
+    lines:[[0,1],[1,2],[2,3],[3,4]] },
+  { id:'cygnus', name:'Cygnus', hint:'The Swan, also called the Northern Cross. It flies along the Milky Way, with bright Deneb at its tail.',
+    stars:[[310.4,45.3,1.3],[305.6,40.3,2.2],[311.6,34.0,2.5],[296.2,45.1,2.9],[292.7,28.0,3.1]],
+    lines:[[0,1],[1,4],[3,1],[1,2]], colors:{4:'#ffd59a'} },
+  { id:'lyra', name:'Lyra', hint:'The Lyre: a small parallelogram hanging from brilliant blue-white Vega. Zoom in close!',
+    stars:[[279.2,38.8,0.0],[281.1,39.7,4.6],[281.2,37.6,4.3],[282.5,33.4,3.5],[284.7,32.7,3.2],[283.6,36.9,4.3]],
+    lines:[[0,1],[0,2],[2,3],[3,4],[4,5],[5,2]], colors:{0:'#cfe0ff'} },
+  { id:'scorpius', name:'Scorpius', hint:'A long curved tail low in the south, with the red supergiant Antares as its heart.',
+    stars:[[241.4,-19.8,2.6],[240.1,-22.6,2.3],[239.7,-26.1,2.9],[247.4,-26.4,1.0],[249.0,-28.2,2.8],[252.5,-34.3,2.3],[253.1,-38.0,3.0],
+           [253.6,-42.4,3.6],[258.0,-43.2,3.3],[264.3,-43.0,1.9],[266.9,-40.1,3.0],[265.6,-39.0,2.4],[263.4,-37.1,1.6]],
+    lines:[[0,1],[1,2],[1,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11,12]], colors:{3:'#ff8a6a'} },
+  { id:'leo', name:'Leo', hint:'The Lion. A backwards question mark, the "Sickle", forms his mane, and a triangle forms his tail.',
+    stars:[[152.1,12.0,1.4],[151.8,16.8,3.5],[155.0,19.8,2.0],[154.2,23.4,3.4],[148.2,26.0,3.9],[146.5,23.8,3.0],[177.3,14.6,2.1],[168.5,20.5,2.6],[168.6,15.4,3.3]],
+    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[2,7],[7,6],[6,8],[8,0],[7,8]] },
+  { id:'crux', name:'Southern Cross', hint:'The smallest constellation, deep in the south. Four bright stars make a kite-shaped cross.',
+    stars:[[186.6,-63.1,0.8],[187.8,-57.1,1.6],[191.9,-59.7,1.3],[183.8,-58.7,2.8]],
+    lines:[[1,0],[2,3]], colors:{1:'#ffc08a'} },
+  { id:'pleiades', name:'Pleiades', hint:'The Seven Sisters: a tiny, sparkling blue cluster west of Orion. Zoom in a long way.',
+    stars:[[56.87,24.10,2.9],[57.29,24.05,3.6],[56.22,24.11,3.7],[56.46,24.37,3.9],[56.58,23.95,4.2],[56.30,24.47,4.3],[57.30,24.14,5.0]],
+    lines:[[2,5],[5,3],[3,0],[0,1],[1,6],[0,4],[4,2]], colors:{0:'#d6e4ff',1:'#d6e4ff',2:'#d6e4ff',3:'#d6e4ff',4:'#d6e4ff',5:'#d6e4ff',6:'#d6e4ff'} },
+];
+const BODIES = [
+  { id:'moon', name:'The Moon', kind:'moon', ra:30, dec:12, size:3.0, hint:'Our Moon. Zoom in until it fills most of the frame to catch its craters.' },
+  { id:'jupiter', name:'Jupiter', kind:'jupiter', ra:72, dec:21, size:0.9, hint:'A steady, bright "star" near Taurus that doesn\'t twinkle. Zoom all the way in to see its cloud bands.' },
+  { id:'saturn', name:'Saturn', kind:'saturn', ra:338, dec:-11, size:0.9, hint:'A pale golden dot in a sparse patch of sky south of Pegasus. Zoom to the max to see its rings.' },
+  { id:'comet', name:'Comet', kind:'comet', ra:128, dec:42, size:0.6, hint:'A visiting comet, between Leo and the Big Dipper. Fit its long tail in the frame.' },
+];
+const METEOR = { id:'meteor', name:'Shooting Star', hint:'Meteors streak across the sky at random. Keep watching and snap one while it\'s in the frame!' };
+const TARGETS = [...CONST, ...BODIES, METEOR];
+
+// unit vector helpers
+const vec = (ra, dec) => { const a = ra * D2R, d = dec * D2R; return [Math.cos(d) * Math.cos(a), Math.cos(d) * Math.sin(a), Math.sin(d)]; };
+const toRD = v => { const n = Math.hypot(...v); return [((Math.atan2(v[1], v[0]) / D2R) + 360) % 360, Math.asin(v[2] / n) / D2R]; };
+for (const c of CONST) {
+  const s = [0, 0, 0];
+  for (const st of c.stars) { const v = vec(st[0], st[1]); s[0] += v[0]; s[1] += v[1]; s[2] += v[2]; }
+  [c.ra, c.dec] = toRD(s);
+}
+
+// background stars: random field + denser Milky Way band
+const STARS = [];
+const palette = ['#ffffff', '#dfe8ff', '#cfdcff', '#fff4e0', '#ffe1c0', '#ffd0b0'];
+for (let i = 0; i < 1600; i++) {
+  const z = rnd() * 2 - 1, a = rnd() * 360;
+  STARS.push({ ra: a, dec: Math.asin(z) / D2R, mag: 3.2 + Math.pow(rnd(), 0.5) * 3.3, c: palette[(rnd() * palette.length) | 0], ph: rnd() * 6.28, sp: 1 + rnd() * 3 });
+}
+// galactic plane: north galactic pole at RA 192.86, Dec 27.13
+const gp = vec(192.86, 27.13);
+const gx = (() => { const t = [0, 0, 1]; const c = [t[1]*gp[2]-t[2]*gp[1], t[2]*gp[0]-t[0]*gp[2], t[0]*gp[1]-t[1]*gp[0]]; const n = Math.hypot(...c); return c.map(x => x / n); })();
+const gy = [gp[1]*gx[2]-gp[2]*gx[1], gp[2]*gx[0]-gp[0]*gx[2], gp[0]*gx[1]-gp[1]*gx[0]];
+const MW = [];
+for (let i = 0; i < 2600; i++) {
+  const l = rnd() * 6.283, b = gauss() * 6 * D2R;
+  const v = [0, 1, 2].map(k => Math.cos(b) * (Math.cos(l) * gx[k] + Math.sin(l) * gy[k]) + Math.sin(b) * gp[k]);
+  const [ra, dec] = toRD(v);
+  const s = { ra, dec, mag: 4.8 + rnd() * 2.2, c: palette[(rnd() * 3) | 0], ph: rnd() * 6.28, sp: 1 + rnd() * 3 };
+  if (i < 1100) STARS.push(s); else MW.push(s);   // MW = faint glow dust
+}
+for (const s of STARS) s.v = vec(s.ra, s.dec);
+for (const s of MW) s.v = vec(s.ra, s.dec);
+for (const c of CONST) c.sv = c.stars.map(s => vec(s[0], s[1]));
+for (const b of BODIES) b.v = vec(b.ra, b.dec);
+
+// ---------- state ----------
+const SAVE_KEY = 'starcam.v1';
+const state = {
+  ra: 84, dec: 2, fov: 70, vra: 0, vdec: 0, targetFov: 70,
+  guide: true, target: 0, mode: 'cam', // cam | album | view
+  found: {}, photos: [], viewIdx: -1, toast: null, flash: 0, time: 0,
+};
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'); Object.assign(state.found, s.found || {}); state.photos = s.photos || []; } catch (e) {}
+const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ found: state.found, photos: state.photos })); }
+  catch (e) { state.photos.shift(); try { localStorage.setItem(SAVE_KEY, JSON.stringify({ found: state.found, photos: state.photos })); } catch (e2) {} } };
+
+// ---------- projection (gnomonic) ----------
+let P = {};
+function setupProj() {
+  const a0 = state.ra * D2R, d0 = state.dec * D2R;
+  P.c = vec(state.ra, state.dec);
+  P.e = [-Math.sin(a0), Math.cos(a0), 0];                            // east
+  P.n = [-Math.sin(d0) * Math.cos(a0), -Math.sin(d0) * Math.sin(a0), Math.cos(d0)]; // north
+  P.scale = (W / 2) / Math.tan(state.fov * D2R / 2);
+}
+function proj(v) {
+  const z = v[0]*P.c[0] + v[1]*P.c[1] + v[2]*P.c[2];
+  if (z < 0.15) return null;
+  const x = (v[0]*P.e[0] + v[1]*P.e[1] + v[2]*P.e[2]) / z;
+  const y = (v[0]*P.n[0] + v[1]*P.n[1] + v[2]*P.n[2]) / z;
+  return [W / 2 - x * P.scale, H / 2 - y * P.scale];
+}
+const angDist = (v1, v2) => Math.acos(Math.max(-1, Math.min(1, v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]))) / D2R;
+
+// ---------- clouds & meteors ----------
+const clouds = [];
+for (let i = 0; i < 9; i++) clouds.push({ ra: rnd() * 360, dec: -40 + rnd() * 100, r: 4 + rnd() * 7, puffs: [...Array(6)].map(() => [gauss() * 0.6, gauss() * 0.3, 0.5 + rnd() * 0.6]), drift: 0.15 + rnd() * 0.25 });
+let meteors = [], nextMeteor = 3;
+function spawnMeteor() {
+  const ang = (rnd() * 0.8 + 0.3) * (rnd() < 0.5 ? 1 : -1) + Math.PI / 2;
+  meteors.push({ x: 30 + Math.random() * 196, y: 10 + Math.random() * 60, vx: Math.cos(ang) * 260 * (Math.random() < .5 ? 1 : -1), vy: Math.abs(Math.sin(ang)) * 140, life: 0, max: 0.55 + Math.random() * 0.4 });
+}
+
+// ---------- audio ----------
+let AC = null;
+function beep(freq, dur, type = 'square', vol = 0.05, slide = 0) {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+    o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur);
+  } catch (e) {}
+}
+function shutterSound() {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const len = AC.sampleRate * 0.08, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    const s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = 0.25; s.buffer = buf; s.connect(g).connect(AC.destination); s.start();
+    setTimeout(() => { const s2 = AC.createBufferSource(); s2.buffer = buf; s2.connect(g); s2.start(); }, 90);
+  } catch (e) {}
+}
+const chime = () => { [660, 880, 1320].forEach((f, i) => setTimeout(() => beep(f, 0.18, 'triangle', 0.06), i * 90)); };
+
+// ---------- drawing: top screen ----------
+function drawStar(ctx, x, y, mag, color, tw) {
+  const b = Math.max(0, Math.min(1, (6.8 - mag) / 6.5));
+  const zoomBoost = Math.min(1.6, 1 + (40 - state.fov) / 60);
+  const r = (0.35 + b * 1.6) * zoomBoost;
+  const alpha = Math.min(1, (0.25 + b * 0.9) * tw);
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  if (r < 0.9) { ctx.fillRect(x - 0.5, y - 0.5, 1, 1); }
+  else {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
+    if (b > 0.55) { ctx.globalAlpha = alpha * 0.25; ctx.beginPath(); ctx.arc(x, y, r * 2.6, 0, 6.283); ctx.fill();
+      if (b > 0.75) { ctx.globalAlpha = alpha * 0.5; ctx.fillRect(x - r * 3.5, y - 0.25, r * 7, 0.5); ctx.fillRect(x - 0.25, y - r * 3.5, 0.5, r * 7); } }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBody(ctx, b, t) {
+  const p = proj(b.v); if (!p) return;
+  const [x, y] = p;
+  const rad = Math.max(0.8, (b.size * D2R / 2) * P.scale);
+  if (x < -rad * 8 || x > W + rad * 8 || y < -rad * 8 || y > H + rad * 8) return;
+  ctx.save();
+  if (b.kind === 'moon') {
+    const g = ctx.createRadialGradient(x, y, rad * 0.6, x, y, rad * 3); g.addColorStop(0, '#fff8e055'); g.addColorStop(1, '#fff8e000');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rad * 3, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#ece6d0'; ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.283); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.283); ctx.clip();
+    ctx.fillStyle = '#c9c2aa';
+    [[-.3,-.2,.28],[.25,-.35,.18],[.1,.25,.22],[-.35,.35,.12],[.45,.15,.1],[-.05,-.5,.08],[.35,.55,.09]].forEach(([cx, cy, cr]) => { ctx.beginPath(); ctx.arc(x + cx * rad, y + cy * rad, cr * rad, 0, 6.283); ctx.fill(); });
+    ctx.fillStyle = '#b5ad94';
+    [[-.25,-.15,.08],[.3,-.3,.05],[.12,.3,.07],[-.1,.6,.04],[.6,-.1,.05]].forEach(([cx, cy, cr]) => { ctx.beginPath(); ctx.arc(x + cx * rad, y + cy * rad, cr * rad, 0, 6.283); ctx.fill(); });
+    ctx.fillStyle = '#0a0d22dd'; ctx.beginPath(); ctx.ellipse(x - rad * 0.55, y, rad * 0.75, rad * 1.05, 0, 0, 6.283); ctx.fill(); // waxing gibbous shadow
+    ctx.restore();
+  } else if (b.kind === 'jupiter' || b.kind === 'saturn') {
+    const isJ = b.kind === 'jupiter';
+    if (rad < 2) { drawStar(ctx, x, y, isJ ? -2 : 0.6, isJ ? '#fff3dc' : '#ffe6a8', 1); ctx.restore(); return; }
+    if (!isJ) { ctx.strokeStyle = '#d9c38c'; ctx.lineWidth = rad * 0.28; ctx.beginPath(); ctx.ellipse(x, y, rad * 2.1, rad * 0.55, -0.35, Math.PI, 2 * Math.PI); ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.283); ctx.fillStyle = isJ ? '#e9d6b6' : '#e6cf96'; ctx.fill();
+    ctx.save(); ctx.clip();
+    const bands = isJ ? [[-.55,'#b98e66',.14],[-.2,'#a7764f',.18],[.2,'#c19a72',.12],[.5,'#9c7350',.1]] : [[-.3,'#c9ae72',.15],[.25,'#bba066',.12]];
+    for (const [o, c, h] of bands) { ctx.fillStyle = c; ctx.fillRect(x - rad, y + o * rad, rad * 2, h * rad * 2); }
+    if (isJ) { ctx.fillStyle = '#c0573c'; ctx.beginPath(); ctx.ellipse(x + rad * 0.3, y + rad * 0.35, rad * 0.18, rad * 0.1, 0, 0, 6.283); ctx.fill(); }
+    ctx.restore();
+    if (!isJ) { ctx.strokeStyle = '#d9c38c'; ctx.lineWidth = rad * 0.28; ctx.beginPath(); ctx.ellipse(x, y, rad * 2.1, rad * 0.55, -0.35, 0, Math.PI); ctx.stroke(); }
+    if (isJ) { // moons
+      ctx.fillStyle = '#fff'; [[-3.2,.1],[-1.9,-.05],[2.4,.05],[4.1,-.1]].forEach(([mx, my]) => ctx.fillRect(x + mx * rad - .6, y + my * rad - .6, 1.2, 1.2)); }
+  } else if (b.kind === 'comet') {
+    const len = rad * 22, ang = -0.6 + Math.sin(t * 0.1) * 0.02;
+    const tx = x + Math.cos(ang) * len, ty = y + Math.sin(ang) * len;
+    const g = ctx.createLinearGradient(x, y, tx, ty); g.addColorStop(0, '#bfffe8aa'); g.addColorStop(1, '#bfffe800');
+    ctx.fillStyle = g; ctx.beginPath();
+    const nx = -Math.sin(ang), ny = Math.cos(ang);
+    ctx.moveTo(x + nx * rad, y + ny * rad); ctx.lineTo(tx + nx * len * 0.18, ty + ny * len * 0.18); ctx.lineTo(tx - nx * len * 0.12, ty - ny * len * 0.12); ctx.lineTo(x - nx * rad, y - ny * rad); ctx.fill();
+    const g2 = ctx.createLinearGradient(x, y, x + Math.cos(ang - .15) * len * .8, y + Math.sin(ang - .15) * len * .8); g2.addColorStop(0, '#9fc3ff88'); g2.addColorStop(1, '#9fc3ff00');
+    ctx.strokeStyle = g2; ctx.lineWidth = Math.max(0.6, rad * 0.4); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(ang - .15) * len * .8, y + Math.sin(ang - .15) * len * .8); ctx.stroke();
+    const g3 = ctx.createRadialGradient(x, y, 0, x, y, rad * 2.5); g3.addColorStop(0, '#ffffff'); g3.addColorStop(0.3, '#c8fff0cc'); g3.addColorStop(1, '#c8fff000');
+    ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(x, y, rad * 2.5, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSky(ctx, t) {
+  setupProj();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  const low = Math.max(0, Math.min(1, (-state.dec + 10) / 80)); // a hint of horizon glow when aiming south
+  g.addColorStop(0, '#03040c'); g.addColorStop(1, low > 0 ? `rgb(${8 + low * 14},${10 + low * 12},${28 + low * 14})` : '#070a1c');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // milky way dust
+  ctx.fillStyle = '#9fb0ff';
+  for (const s of MW) { const p = proj(s.v); if (!p) continue; const [x, y] = p; if (x < 0 || x > W || y < 0 || y > H) continue;
+    ctx.globalAlpha = 0.07 + (6.9 - s.mag) * 0.05; ctx.fillRect(x - 1, y - 1, 2, 2); }
+  ctx.globalAlpha = 1;
+
+  for (const s of STARS) { const p = proj(s.v); if (!p) continue; const [x, y] = p; if (x < -2 || x > W + 2 || y < -2 || y > H + 2) continue;
+    const limit = 5.2 + Math.min(1.6, (70 - state.fov) / 30); if (s.mag > limit) continue;
+    drawStar(ctx, x, y, s.mag, s.c, 0.8 + 0.2 * Math.sin(t * s.sp + s.ph)); }
+
+  // constellations
+  for (const c of CONST) {
+    const pts = c.sv.map(proj);
+    const done = !!state.found[c.id];
+    if (state.guide || done) {
+      ctx.strokeStyle = done ? '#ffd36b' : '#7e95ff'; ctx.globalAlpha = done ? 0.55 : 0.28; ctx.lineWidth = 0.6;
+      if (!done) ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      for (const [a, b] of c.lines) { if (!pts[a] || !pts[b]) continue; ctx.moveTo(pts[a][0], pts[a][1]); ctx.lineTo(pts[b][0], pts[b][1]); }
+      ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    c.stars.forEach((s, i) => { const p = pts[i]; if (!p) return; if (p[0] < -4 || p[0] > W + 4 || p[1] < -4 || p[1] > H + 4) return;
+      drawStar(ctx, p[0], p[1], s[2], (c.colors && c.colors[i]) || '#f4f7ff', 0.85 + 0.15 * Math.sin(t * 2.3 + i * 1.7)); });
+    if (done) { const cp = proj(vec(c.ra, c.dec)); if (cp && cp[0] > -40 && cp[0] < W + 40 && cp[1] > 0 && cp[1] < H) {
+      ctx.font = '6px monospace'; ctx.fillStyle = '#ffd36baa'; ctx.textAlign = 'center'; ctx.fillText(c.name.toUpperCase(), cp[0], cp[1] + 14); ctx.textAlign = 'left'; } }
+  }
+  for (const b of BODIES) drawBody(ctx, b, t);
+
+  // meteors
+  for (const m of meteors) {
+    const k = m.life / m.max, tail = 0.12;
+    const hx = m.x + m.vx * m.life, hy = m.y + m.vy * m.life, tx = hx - m.vx * tail, ty = hy - m.vy * tail;
+    const gm = ctx.createLinearGradient(hx, hy, tx, ty); gm.addColorStop(0, `rgba(255,255,255,${1 - k})`); gm.addColorStop(1, 'rgba(160,200,255,0)');
+    ctx.strokeStyle = gm; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
+  }
+
+  // clouds
+  for (const cl of clouds) {
+    const p = proj(vec(cl.ra, cl.dec)); if (!p) continue;
+    const r = cl.r * D2R * P.scale; if (p[0] < -r * 3 || p[0] > W + r * 3 || p[1] < -r * 3 || p[1] > H + r * 3) continue;
+    for (const [ox, oy, s] of cl.puffs) {
+      const gx = p[0] + ox * r, gy = p[1] + oy * r, rr = r * s;
+      const gc = ctx.createRadialGradient(gx, gy, 0, gx, gy, rr); gc.addColorStop(0, 'rgba(32,36,62,0.75)'); gc.addColorStop(1, 'rgba(32,36,62,0)');
+      ctx.fillStyle = gc; ctx.beginPath(); ctx.arc(gx, gy, rr, 0, 6.283); ctx.fill();
+    }
+  }
+}
+
+function cloudCover(v) {
+  let cov = 0;
+  for (const cl of clouds) { const d = angDist(v, vec(cl.ra, cl.dec)); if (d < cl.r * 0.9) cov = Math.max(cov, 1 - d / (cl.r * 0.9)); }
+  return cov;
+}
+
+function drawHUD(ctx, t) {
+  ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 1;
+  const m = 8, L = 12;
+  [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]].forEach(([x, y, dx, dy]) => {
+    ctx.beginPath(); ctx.moveTo(x, y + L * dy); ctx.lineTo(x, y); ctx.lineTo(x + L * dx, y); ctx.stroke(); });
+  ctx.strokeStyle = '#ffffff88'; ctx.beginPath();
+  ctx.moveTo(W / 2 - 6, H / 2); ctx.lineTo(W / 2 - 2, H / 2); ctx.moveTo(W / 2 + 2, H / 2); ctx.lineTo(W / 2 + 6, H / 2);
+  ctx.moveTo(W / 2, H / 2 - 6); ctx.lineTo(W / 2, H / 2 - 2); ctx.moveTo(W / 2, H / 2 + 2); ctx.lineTo(W / 2, H / 2 + 6); ctx.stroke();
+  ctx.font = '6px monospace'; ctx.fillStyle = '#ffffffcc';
+  const raH = state.ra / 15, h = Math.floor(raH), mn = Math.floor((raH - h) * 60);
+  ctx.fillText(`RA ${String(h).padStart(2, '0')}h${String(mn).padStart(2, '0')}m  DEC ${state.dec >= 0 ? '+' : ''}${state.dec.toFixed(1)}°`, 14, 18);
+  ctx.textAlign = 'right'; ctx.fillText(`×${(70 / state.fov).toFixed(1)}  FOV ${state.fov.toFixed(0)}°`, W - 14, 18);
+  // REC dot blinking
+  if ((t * 2 | 0) % 2) { ctx.fillStyle = '#ff5a6a'; ctx.beginPath(); ctx.arc(W - 16, H - 17, 2, 0, 6.283); ctx.fill(); }
+  ctx.fillStyle = '#ffffffaa'; ctx.fillText(`${state.photos.length}/12`, W - 22, H - 15);
+  ctx.textAlign = 'left';
+  const tgt = TARGETS[state.target];
+  ctx.fillText(`◎ ${tgt.name}${state.found[tgt.id] ? ' ✓' : ''}`, 14, H - 15);
+}
+
+function drawToast(ctx) {
+  const ts = state.toast; if (!ts) return;
+  const a = Math.min(1, ts.life * 3, (ts.max - ts.life) * 3);
+  ctx.globalAlpha = a;
+  ctx.fillStyle = '#0b0e22e6'; ctx.fillRect(28, H / 2 - 24, W - 56, 48);
+  ctx.strokeStyle = ts.good ? '#ffd36b' : '#7e95ff'; ctx.strokeRect(28.5, H / 2 - 23.5, W - 57, 47);
+  ctx.textAlign = 'center'; ctx.fillStyle = ts.good ? '#ffd36b' : '#cfd6ff'; ctx.font = 'bold 9px monospace';
+  ctx.fillText(ts.title, W / 2, H / 2 - 8);
+  ctx.font = '7px monospace'; ctx.fillStyle = '#e8ecff'; ctx.fillText(ts.sub, W / 2, H / 2 + 4);
+  if (ts.stars != null) { ctx.font = '10px monospace'; ctx.fillStyle = '#ffd36b'; ctx.fillText('★'.repeat(ts.stars) + '☆'.repeat(3 - ts.stars), W / 2, H / 2 + 17); }
+  ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+}
+const toast = (title, sub, stars = null, good = false) => { state.toast = { title, sub, stars, good, life: 0, max: 2.4 }; };
+
+// ---------- photo evaluation ----------
+function evaluate() {
+  setupProj();
+  const results = [];
+  const inFrame = (p, m = 6) => p && p[0] > m && p[0] < W - m && p[1] > m && p[1] < H - m;
+  for (const c of CONST) {
+    const pts = c.sv.map(proj);
+    if (!pts.every(p => inFrame(p))) continue;
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const fill = Math.max((Math.max(...xs) - Math.min(...xs)) / W, (Math.max(...ys) - Math.min(...ys)) / H);
+    let stars = fill >= 0.72 ? 3 : fill >= 0.52 ? 2 : fill >= 0.32 ? 1 : 0;
+    const cover = cloudCover(vec(c.ra, c.dec));
+    if (stars && cover > 0.35) stars--;
+    results.push({ t: c, stars, fill, cover, tip: stars ? '' : 'Too small: zoom in!' });
+  }
+  for (const b of BODIES) {
+    const p = proj(b.v); if (!inFrame(p, 2)) continue;
+    const rad = (b.size * D2R / 2) * P.scale, off = Math.hypot(p[0] - W / 2, p[1] - H / 2);
+    let stars = 0, tip = '';
+    if (b.kind === 'comet') {
+      const len = rad * 22, tx = p[0] + Math.cos(-0.6) * len, ty = p[1] + Math.sin(-0.6) * len;
+      const tailIn = tx > 0 && tx < W && ty > 0 && ty < H;
+      const fill = len / W;
+      stars = !tailIn ? 0 : fill > 0.55 ? 3 : fill > 0.35 ? 2 : fill > 0.18 ? 1 : 0;
+      tip = !tailIn ? 'Fit the whole tail in!' : 'Zoom in on the comet!';
+    } else {
+      const frac = rad * 2 / H;
+      if (off > H * 0.3) { tip = 'Center it in the frame!'; }
+      else if (b.kind === 'moon') stars = frac > 0.7 ? 3 : frac > 0.45 ? 2 : frac > 0.22 ? 1 : 0;
+      else stars = frac > 0.16 ? 3 : frac > 0.10 ? 2 : frac > 0.05 ? 1 : 0;
+      if (!tip) tip = 'Zoom in closer!';
+    }
+    if (stars && cloudCover(b.v) > 0.35) stars--;
+    results.push({ t: b, stars, tip });
+  }
+  for (const m of meteors) { const hx = m.x + m.vx * m.life, hy = m.y + m.vy * m.life;
+    if (hx > 0 && hx < W && hy > 0 && hy < H) { results.push({ t: METEOR, stars: m.life / m.max < 0.5 ? 3 : 2, tip: '' }); break; } }
+  // prefer current target, then best rating
+  const cur = TARGETS[state.target];
+  results.sort((a, b) => (b.t === cur) - (a.t === cur) || b.stars - a.stars);
+  return results;
+}
+
+let pendingShot = false;
+function takePhoto() {
+  if (state.mode !== 'cam' || state.flash > 0) return;
+  pendingShot = true; shutterSound(); state.flash = 1;
+}
+function finishPhoto(img) {
+  const res = evaluate();
+  const best = res.find(r => r.stars > 0);
+  let label = 'Night sky', stars = 0;
+  if (best) {
+    label = best.t.name; stars = best.stars;
+    const prev = state.found[best.t.id] || 0;
+    if (!prev) { chime(); toast(`NEW: ${best.t.name.toUpperCase()}!`, 'Added to your star log', stars, true); }
+    else if (stars > prev) { chime(); toast(`${best.t.name}: better shot!`, `Rating improved`, stars, true); }
+    else toast(best.t.name, prev >= 3 ? 'Already a perfect shot' : 'Already logged. Try for a better rating!', stars);
+    state.found[best.t.id] = Math.max(prev, stars);
+    // auto-advance target if we just logged it
+    if (!prev && TARGETS[state.target] === best.t) { const nxt = TARGETS.findIndex((tg, i) => i > state.target && !state.found[tg.id]); if (nxt >= 0) state.target = nxt; else { const any = TARGETS.findIndex(tg => !state.found[tg.id]); if (any >= 0) state.target = any; } }
+    if (TARGETS.every(tg => state.found[tg.id])) setTimeout(() => toast('SKY LOG COMPLETE!', 'You photographed every target!', null, true), 2600);
+  } else {
+    const near = res[0];
+    toast('Nothing logged', near ? `${near.t.name}: ${near.tip}` : 'Find a target in the frame', null);
+    beep(220, 0.15, 'square', 0.04);
+  }
+  // stamp the photo
+  const c = document.createElement('canvas'); c.width = 320; c.height = 240;
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0, 320, 240);
+  x.font = 'bold 13px monospace'; x.fillStyle = '#ffd36bdd'; x.fillText(label + (stars ? ' ' + '★'.repeat(stars) : ''), 10, 228);
+  x.font = '10px monospace'; x.fillStyle = '#ffffff99'; x.textAlign = 'right'; x.fillText(new Date().toLocaleDateString(), 310, 228);
+  state.photos.push({ src: c.toDataURL('image/jpeg', 0.72), label, stars });
+  if (state.photos.length > 12) state.photos.shift();
+  save();
+}
+
+// ---------- bottom screen ----------
+let buttons = [];
+const btn = (id, x, y, w, h, fn) => buttons.push({ id, x, y, w, h, fn });
+const held = {};
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+function wrap(ctx, text, x, y, maxW, lh) {
+  const words = text.split(' '); let line = '';
+  for (const w of words) { const test = line ? line + ' ' + w : w; if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line, x, y); y += lh; line = w; } else line = test; }
+  if (line) ctx.fillText(line, x, y);
+}
+function pill(ctx, id, x, y, w, h, label, on, fn) {
+  const pressed = held[id];
+  rr(ctx, x, y + (pressed ? 1 : 0), w, h, 4); ctx.fillStyle = on ? '#3b4aa0' : '#232a55'; ctx.fill();
+  ctx.strokeStyle = on ? '#9fb0ff' : '#3c4787'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = on ? '#fff' : '#b9c2ff'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.fillText(label, x + w / 2, y + h / 2 + 2.5 + (pressed ? 1 : 0)); ctx.textAlign = 'left';
+  btn(id, x, y, w, h, fn);
+}
+
+function drawBottomCam(ctx, t) {
+  const tgt = TARGETS[state.target];
+  // header
+  ctx.fillStyle = '#151a38'; ctx.fillRect(0, 0, W, 22);
+  ctx.fillStyle = '#ffd36b'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(`${tgt.name.toUpperCase()}${state.found[tgt.id] ? '  ' + '★'.repeat(state.found[tgt.id]) : ''}`, W / 2, 14);
+  ctx.fillStyle = '#9fb0ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('◀', 12, 15); ctx.fillText('▶', W - 12, 15); ctx.textAlign = 'left';
+  btn('prev', 0, 0, 40, 22, () => cycle(-1)); btn('next', W - 40, 0, 40, 22, () => cycle(1));
+
+  // compass
+  const cx = 34, cy = 54, R = 24;
+  ctx.strokeStyle = '#3c4787'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.283); ctx.stroke();
+  ctx.fillStyle = '#0d1130'; ctx.beginPath(); ctx.arc(cx, cy, R - 1, 0, 6.283); ctx.fill();
+  let dist = null;
+  if (tgt.id !== 'meteor') {
+    const tv = tgt.v || vec(tgt.ra, tgt.dec);
+    setupProj();
+    dist = angDist(P.c, tv);
+    const x = tv[0]*P.e[0] + tv[1]*P.e[1] + tv[2]*P.e[2], y = tv[0]*P.n[0] + tv[1]*P.n[1] + tv[2]*P.n[2];
+    const ang = Math.atan2(-y, -x);
+    if (dist < state.fov * 0.25) { ctx.strokeStyle = '#52ff9a'; ctx.beginPath(); ctx.arc(cx, cy, 6 + Math.sin(t * 6) * 1.5, 0, 6.283); ctx.stroke(); }
+    else { ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang); ctx.fillStyle = '#ffd36b';
+      ctx.beginPath(); ctx.moveTo(R - 5, 0); ctx.lineTo(-6, -6); ctx.lineTo(-2, 0); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    ctx.fillStyle = '#cfd6ff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillText(`${dist.toFixed(0)}° away`, cx, cy + R + 9); ctx.textAlign = 'left';
+  } else { ctx.fillStyle = '#ffd36b'; ctx.font = '14px monospace'; ctx.textAlign = 'center'; ctx.fillText('☄', cx, cy + 5); ctx.textAlign = 'left'; }
+
+  // hint text
+  ctx.fillStyle = '#cfd6ff'; ctx.font = '7px monospace'; wrap(ctx, tgt.hint, 66, 34, 182, 9);
+  const nFound = TARGETS.filter(tg => state.found[tg.id]).length, nStars = TARGETS.reduce((s, tg) => s + (state.found[tg.id] || 0), 0);
+  ctx.fillStyle = '#7d87c9'; ctx.fillText(`LOG ${nFound}/${TARGETS.length}   ★ ${nStars}/${TARGETS.length * 3}`, 66, 86);
+
+  // d-pad
+  const dx = 40, dy = 132, s = 15;
+  const pad = [['up', 0, -1, '▲'], ['down', 0, 1, '▼'], ['left', -1, 0, '◀'], ['right', 1, 0, '▶']];
+  ctx.fillStyle = '#232a55'; rr(ctx, dx - s / 2, dy - s * 1.5 - 2, s, s * 3 + 4, 3); ctx.fill(); rr(ctx, dx - s * 1.5 - 2, dy - s / 2, s * 3 + 4, s, 3); ctx.fill();
+  for (const [id, ox, oy, g] of pad) {
+    const bx = dx + ox * (s + 1) - s / 2, by = dy + oy * (s + 1) - s / 2;
+    if (held[id]) { ctx.fillStyle = '#3b4aa0'; ctx.fillRect(bx, by, s, s); }
+    ctx.fillStyle = '#9fb0ff'; ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.fillText(g, bx + s / 2, by + s / 2 + 3); ctx.textAlign = 'left';
+    buttons.push({ id, x: bx - 3, y: by - 3, w: s + 6, h: s + 6, hold: true });
+  }
+
+  // middle buttons
+  pill(ctx, 'guide', 88, 100, 72, 18, state.guide ? 'GUIDE: ON' : 'GUIDE: OFF', state.guide, () => { state.guide = !state.guide; beep(520, 0.05); });
+  pill(ctx, 'album', 88, 122, 72, 18, `ALBUM (${state.photos.length})`, false, () => { state.mode = 'album'; beep(600, 0.05); });
+  pill(ctx, 'zout', 88, 144, 34, 18, '− ZOOM', false, null); buttons[buttons.length - 1].hold = true;
+  pill(ctx, 'zin', 126, 144, 34, 18, '+ ZOOM', false, null); buttons[buttons.length - 1].hold = true;
+
+  // shutter
+  const sx = 210, sy = 131, sr = 26;
+  ctx.fillStyle = '#0d1130'; ctx.beginPath(); ctx.arc(sx, sy, sr + 3, 0, 6.283); ctx.fill();
+  const grd = ctx.createRadialGradient(sx - 6, sy - 6, 2, sx, sy, sr);
+  grd.addColorStop(0, held.shoot ? '#ff9a7a' : '#ffb59e'); grd.addColorStop(1, held.shoot ? '#b8343f' : '#e2475a');
+  ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(sx, sy + (held.shoot ? 1 : 0), sr, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = '#ffffff55'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy + (held.shoot ? 1 : 0), sr - 7, 0, 6.283); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'; ctx.fillText('SNAP', sx, sy + 3 + (held.shoot ? 1 : 0)); ctx.textAlign = 'left';
+  buttons.push({ id: 'shoot', x: sx - sr, y: sy - sr, w: sr * 2, h: sr * 2, fn: takePhoto });
+
+  // zoom slider
+  const zx = 16, zw = W - 32, zy = 176;
+  ctx.fillStyle = '#232a55'; rr(ctx, zx, zy - 2, zw, 4, 2); ctx.fill();
+  const k = (Math.log(90) - Math.log(state.targetFov)) / (Math.log(90) - Math.log(3));
+  ctx.fillStyle = '#3b4aa0'; rr(ctx, zx, zy - 2, zw * k, 4, 2); ctx.fill();
+  ctx.fillStyle = '#ffd36b'; ctx.beginPath(); ctx.arc(zx + zw * k, zy, 5, 0, 6.283); ctx.fill();
+  ctx.fillStyle = '#7d87c9'; ctx.font = '6px monospace'; ctx.fillText('WIDE', zx, zy - 6); ctx.textAlign = 'right'; ctx.fillText('TELE', zx + zw, zy - 6); ctx.textAlign = 'left';
+  buttons.push({ id: 'zslider', x: zx - 6, y: zy - 10, w: zw + 12, h: 20, slider: { x: zx, w: zw } });
+}
+
+function drawBottomAlbum(ctx) {
+  ctx.fillStyle = '#151a38'; ctx.fillRect(0, 0, W, 22);
+  ctx.fillStyle = '#ffd36b'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.fillText('PHOTO ALBUM', W / 2, 14); ctx.textAlign = 'left';
+  const cols = 4, tw = 56, th = 42, gx = 8, gy = 6, ox = (W - (cols * tw + (cols - 1) * gx)) / 2, oy = 28;
+  for (let i = 0; i < 12; i++) {
+    const x = ox + (i % cols) * (tw + gx), y = oy + Math.floor(i / cols) * (th + gy);
+    const ph = state.photos[i];
+    ctx.fillStyle = '#0d1130'; ctx.fillRect(x, y, tw, th);
+    ctx.strokeStyle = i === state.viewIdx ? '#ffd36b' : '#3c4787'; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, tw - 1, th - 1);
+    if (ph) { if (!ph.img) { ph.img = new Image(); ph.img.src = ph.src; } if (ph.img.complete) ctx.drawImage(ph.img, x + 1, y + 1, tw - 2, th - 2);
+      buttons.push({ id: 'ph' + i, x, y, w: tw, h: th, fn: () => { state.viewIdx = i; state.mode = 'view'; beep(700, 0.04); } }); }
+  }
+  pill(ctx, 'back', 8, 170, 60, 16, '◀ CAMERA', false, () => { state.mode = 'cam'; state.viewIdx = -1; beep(500, 0.05); });
+  if (state.mode === 'view' && state.photos[state.viewIdx]) {
+    pill(ctx, 'del', W - 68, 170, 60, 16, 'DELETE', false, () => { state.photos.splice(state.viewIdx, 1); state.viewIdx = -1; state.mode = 'album'; save(); beep(180, 0.1); });
+    pill(ctx, 'dl', W - 134, 170, 60, 16, 'SAVE', false, () => { const a = document.createElement('a'); a.href = state.photos[state.viewIdx].src; a.download = `starcam-${state.photos[state.viewIdx].label.replace(/\W+/g, '-')}.jpg`; a.click(); });
+  } else { ctx.fillStyle = '#7d87c9'; ctx.font = '7px monospace'; ctx.fillText(state.photos.length ? 'Tap a photo to view it' : 'No photos yet. Go take some!', 80, 181); }
+}
+
+function drawTopAlbum(ctx) {
+  ctx.fillStyle = '#05060f'; ctx.fillRect(0, 0, W, H);
+  const ph = state.photos[state.viewIdx];
+  if (state.mode === 'view' && ph) {
+    if (!ph.img) { ph.img = new Image(); ph.img.src = ph.src; }
+    if (ph.img.complete) ctx.drawImage(ph.img, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = '#cfd6ff'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillText('STAR LOG', W / 2, 18);
+    ctx.font = '7px monospace';
+    TARGETS.forEach((tg, i) => { const col = i < 7 ? 0 : 1, row = i % 7, x = col ? W * 0.75 : W * 0.25, y = 38 + row * 20;
+      const s = state.found[tg.id] || 0; ctx.fillStyle = s ? '#ffd36b' : '#4a5490';
+      ctx.fillText(s ? tg.name : '? ? ?', x, y); ctx.fillText('★'.repeat(s) + '☆'.repeat(3 - s), x, y + 8); });
+    ctx.textAlign = 'left';
+  }
+}
+
+// ---------- input ----------
+const keys = {};
+const cycle = d => { state.target = (state.target + d + TARGETS.length) % TARGETS.length; beep(440 + d * 40, 0.04); };
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase(); keys[k] = true;
+  if (k === ' ' || k === 'enter') { e.preventDefault(); if (!e.repeat) takePhoto(); }
+  if (k === 'g' && !e.repeat) { state.guide = !state.guide; beep(520, 0.05); }
+  if (k === '[' && !e.repeat) cycle(-1);
+  if (k === ']' && !e.repeat) cycle(1);
+  if (k === 'p' && !e.repeat) { state.mode = state.mode === 'cam' ? 'album' : 'cam'; state.viewIdx = -1; }
+  if (k === 'escape') { state.mode = 'cam'; state.viewIdx = -1; }
+  if (k.startsWith('arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+const toLocal = (c, e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+let drag = null;
+topC.addEventListener('pointerdown', e => { topC.setPointerCapture(e.pointerId);
+  if (state.mode !== 'cam') { state.mode = 'album'; state.viewIdx = -1; return; }
+  drag = { p: toLocal(topC, e), t: performance.now() }; state.vra = state.vdec = 0; });
+topC.addEventListener('pointermove', e => { if (!drag) return; const p = toLocal(topC, e);
+  const k = state.fov / W, dx = p[0] - drag.p[0], dy = p[1] - drag.p[1];
+  const cd = Math.max(0.2, Math.cos(state.dec * D2R));
+  state.ra = (state.ra + dx * k / cd + 360) % 360; state.dec = Math.max(-75, Math.min(85, state.dec + dy * k));
+  const dt = Math.max(1, performance.now() - drag.t) / 1000;
+  state.vra = dx * k / cd / dt * 0.5; state.vdec = dy * k / dt * 0.5;
+  drag.p = p; drag.t = performance.now(); });
+const endDrag = () => { if (drag && performance.now() - drag.t > 80) { state.vra = state.vdec = 0; } drag = null; };
+topC.addEventListener('pointerup', endDrag); topC.addEventListener('pointercancel', endDrag);
+topC.addEventListener('wheel', e => { e.preventDefault(); state.targetFov = Math.max(3, Math.min(90, state.targetFov * Math.exp(e.deltaY * 0.0015))); }, { passive: false });
+
+const active = new Map(); // pointerId -> button id
+function hit(x, y) { for (let i = buttons.length - 1; i >= 0; i--) { const b = buttons[i]; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return b; } return null; }
+function sliderSet(b, x) { const k = Math.max(0, Math.min(1, (x - b.slider.x) / b.slider.w)); state.targetFov = Math.exp(Math.log(90) - k * (Math.log(90) - Math.log(3))); }
+botC.addEventListener('pointerdown', e => {
+  botC.setPointerCapture(e.pointerId);
+  const [x, y] = toLocal(botC, e), b = hit(x, y); if (!b) return;
+  held[b.id] = true; active.set(e.pointerId, b);
+  if (b.slider) sliderSet(b, x);
+  if (b.fn) b.fn();
+});
+botC.addEventListener('pointermove', e => { const b = active.get(e.pointerId); if (b && b.slider) sliderSet(b, toLocal(botC, e)[0]); });
+const release = e => { const b = active.get(e.pointerId); if (b) { held[b.id] = false; active.delete(e.pointerId); } };
+botC.addEventListener('pointerup', release); botC.addEventListener('pointercancel', release);
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; state.time += dt; const t = state.time;
+
+  if (state.mode === 'cam') {
+    const speed = state.fov * 0.9;
+    let ix = (keys.arrowright || keys.d || held.right ? 1 : 0) - (keys.arrowleft || keys.a || held.left ? 1 : 0);
+    let iy = (keys.arrowup || keys.w || held.up ? 1 : 0) - (keys.arrowdown || keys.s || held.down ? 1 : 0);
+    const cd = Math.max(0.2, Math.cos(state.dec * D2R));
+    if (ix || iy) { state.vra = -ix * speed / cd; state.vdec = iy * speed; }
+    else if (!drag) { state.vra *= Math.pow(0.02, dt); state.vdec *= Math.pow(0.02, dt); }
+    if (!drag) { state.ra = (state.ra + state.vra * dt + 360) % 360; state.dec = Math.max(-75, Math.min(85, state.dec + state.vdec * dt)); }
+    if (keys.e || keys.x || held.zin) state.targetFov = Math.max(3, state.targetFov * Math.exp(-1.4 * dt));
+    if (keys.q || keys.z || held.zout) state.targetFov = Math.min(90, state.targetFov * Math.exp(1.4 * dt));
+    state.fov += (state.targetFov - state.fov) * Math.min(1, dt * 10);
+  }
+
+  for (const cl of clouds) cl.ra = (cl.ra + cl.drift * dt + 360) % 360;
+  nextMeteor -= dt; if (nextMeteor <= 0) { spawnMeteor(); nextMeteor = 4 + Math.random() * 8; }
+  meteors = meteors.filter(m => (m.life += dt) < m.max);
+  if (state.toast && (state.toast.life += dt) > state.toast.max) state.toast = null;
+
+  // top
+  if (state.mode === 'cam') {
+    drawSky(T, t);
+    if (pendingShot) { pendingShot = false; finishPhoto(topC); }
+    drawHUD(T, t);
+  } else drawTopAlbum(T);
+  if (state.flash > 0) { T.fillStyle = `rgba(255,255,255,${state.flash})`; T.fillRect(0, 0, W, H); state.flash = Math.max(0, state.flash - dt * 4); }
+  drawToast(T);
+
+  // bottom
+  buttons = [];
+  B.fillStyle = '#0b0e22'; B.fillRect(0, 0, W, H);
+  B.fillStyle = '#ffffff06'; for (let y = 0; y < H; y += 2) B.fillRect(0, y, W, 1);
+  if (state.mode === 'cam') drawBottomCam(B, t); else drawBottomAlbum(B);
+
+  requestAnimationFrame(frame);
+}
+toast('STARCAM', 'Aim at Orion and press SNAP!', null, true);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+build/
+*.elf
+*.map
+icon_preview.png

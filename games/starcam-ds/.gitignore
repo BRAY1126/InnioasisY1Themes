@@ -1,3 +1,4 @@
 build/
 *.nds
+!dist/StarCam.nds
 *.elf

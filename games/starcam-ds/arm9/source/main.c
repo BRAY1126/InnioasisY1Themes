@@ -65,40 +65,50 @@ static void round_rect(u16 *s, int x, int y, int w, int h, RGB fill, RGB edge) {
         px_mix(s, x + i, y + j, border ? edge : fill, 256);
     }
 }
-static void fill_circle(u16 *s, float cx, float cy, float r, RGB c, int a) {
-    int x0 = (int)(cx - r - 1), x1 = (int)(cx + r + 1), y0 = (int)(cy - r - 1), y1 = (int)(cy + r + 1);
+// The DS has no FPU, so everything that runs per pixel uses integer maths.
+// isqrt4[n] = sqrt(n) * 16, for n < 65536.
+static u16 isqrt4[65536];
+static inline int isqrt_q4(int n) { return n < 65536 ? isqrt4[n] : (int)(sqrtf((float)n) * 16); }
+// sin/cos in Q14, 1024 steps per turn
+static s16 sin1k[1024];
+#define SIN1K(i) sin1k[(i) & 1023]
+#define COS1K(i) sin1k[((i) + 256) & 1023]
+
+static void fill_circle(u16 *s, float cxf, float cyf, float rf, RGB c, int a) {
+    int cx = (int)(cxf * 16), cy = (int)(cyf * 16), r = (int)(rf * 16), r2 = r * r;
+    int x0 = (cx - r) >> 4, x1 = (cx + r) >> 4, y0 = (cy - r) >> 4, y1 = (cy + r) >> 4;
     if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 > W - 1) x1 = W - 1; if (y1 > H - 1) y1 = H - 1;
-    float r2 = r * r;
-    for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
-        float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
-        if (dx * dx + dy * dy <= r2) px_mix(s, x, y, c, a);
+    for (int y = y0; y <= y1; y++) {
+        int dy = y * 16 + 8 - cy, dy2 = dy * dy;
+        if (dy2 > r2) continue;
+        for (int x = x0; x <= x1; x++) { int dx = x * 16 + 8 - cx; if (dx * dx + dy2 <= r2) px_mix(s, x, y, c, a); }
     }
 }
-static void stroke_circle(u16 *s, float cx, float cy, float r, RGB c, int a) {
-    int n = (int)(r * 7) + 8;
-    int lx = -999, ly = -999;
-    for (int i = 0; i < n; i++) {
-        float t = 2 * PI_F * i / n;
-        int x = (int)(cx + cosf(t) * r), y = (int)(cy + sinf(t) * r);
-        if (x != lx || y != ly) px_mix(s, x, y, c, a);
-        lx = x; ly = y;
+static void stroke_circle(u16 *s, float cxf, float cyf, float rf, RGB c, int a) {
+    int cx = (int)cxf, cy = (int)cyf, r = (int)(rf + 0.5f), x = r, y = 0, err = 1 - r;
+    while (x >= y) {
+        px_mix(s, cx + x, cy + y, c, a); px_mix(s, cx - x, cy + y, c, a); px_mix(s, cx + x, cy - y, c, a); px_mix(s, cx - x, cy - y, c, a);
+        if (x != y) { px_mix(s, cx + y, cy + x, c, a); px_mix(s, cx - y, cy + x, c, a); px_mix(s, cx + y, cy - x, c, a); px_mix(s, cx - y, cy - x, c, a); }
+        y++;
+        if (err < 0) err += 2 * y + 1; else { x--; err += 2 * (y - x) + 1; }
     }
 }
-static void fill_tri(u16 *s, float ax, float ay, float bx, float by, float cx, float cy, RGB c) {
-    int x0 = (int)fminf(ax, fminf(bx, cx)), x1 = (int)fmaxf(ax, fmaxf(bx, cx)) + 1;
-    int y0 = (int)fminf(ay, fminf(by, cy)), y1 = (int)fmaxf(ay, fmaxf(by, cy)) + 1;
-    float area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-    if (fabsf(area) < 0.01f) return;
+static void fill_tri(u16 *s, float axf, float ayf, float bxf, float byf, float cxf, float cyf, RGB c) {
+    int ax = (int)(axf * 16), ay = (int)(ayf * 16), bx = (int)(bxf * 16), by = (int)(byf * 16), cx = (int)(cxf * 16), cy = (int)(cyf * 16);
+    int x0 = (ax < bx ? (ax < cx ? ax : cx) : (bx < cx ? bx : cx)) >> 4, x1 = (ax > bx ? (ax > cx ? ax : cx) : (bx > cx ? bx : cx)) >> 4;
+    int y0 = (ay < by ? (ay < cy ? ay : cy) : (by < cy ? by : cy)) >> 4, y1 = (ay > by ? (ay > cy ? ay : cy) : (by > cy ? by : cy)) >> 4;
+    int area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if (!area) return;
     for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
-        float px = x + 0.5f, py = y + 0.5f;
-        float w0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
-        float w1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
-        float w2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+        int px = x * 16 + 8, py = y * 16 + 8;
+        int w0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+        int w1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+        int w2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
         if (area > 0 ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0)) px_mix(s, x, y, c, 256);
     }
 }
 
-// Liang-Barsky clip, then DDA. dash: 0 = solid, else on/off period in pixels.
+// Liang-Barsky clip (a few float ops per line), then a 16.16 fixed-point DDA.
 static void draw_line(u16 *s, float x0, float y0, float x1, float y1, RGB c, int a, int dash, bool additive) {
     float dx = x1 - x0, dy = y1 - y0, t0 = 0, t1 = 1;
     float p[4] = { -dx, dx, -dy, dy }, q[4] = { x0 + 2, W + 1 - x0, y0 + 2, H + 1 - y0 };
@@ -110,10 +120,10 @@ static void draw_line(u16 *s, float x0, float y0, float x1, float y1, RGB c, int
     }
     float ax = x0 + t0 * dx, ay = y0 + t0 * dy, bx = x0 + t1 * dx, by = y0 + t1 * dy;
     int n = (int)fmaxf(fabsf(bx - ax), fabsf(by - ay)) + 1;
-    for (int i = 0; i <= n; i++) {
+    int fx = (int)(ax * 65536), fy = (int)(ay * 65536), sx = (int)((bx - ax) * 65536 / n), sy = (int)((by - ay) * 65536 / n);
+    for (int i = 0; i <= n; i++, fx += sx, fy += sy) {
         if (dash && ((i / dash) & 1)) continue;
-        float t = (float)i / n;
-        int x = (int)(ax + (bx - ax) * t), y = (int)(ay + (by - ay) * t);
+        int x = fx >> 16, y = fy >> 16;
         if (additive) px_add(s, x, y, c, a); else px_mix(s, x, y, c, a);
     }
 }
@@ -133,13 +143,13 @@ static const u8 special[15][FONT_H] = {
     [8] = { 0x06, 0x09, 0x09, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
     [14] = { 0x00, 0x0e, 0x11, 0x15, 0x11, 0x0e, 0x00, 0x00, 0x00, 0x00 },
 };
-// note: special glyph bit 4 = leftmost pixel, font6 bit 0 = leftmost pixel
+// note: bit 0 = leftmost pixel for both the special glyphs and font6
 static int text_width(const char *t) { return (int)strlen(t) * FONT_W; }
 static void draw_text(u16 *s, int x, int y, const char *t, RGB c, int a) {
     for (; *t; t++, x += FONT_W) {
         unsigned ch = (u8)*t;
         if (ch < 15) {
-            for (int j = 0; j < FONT_H; j++) for (int i = 0; i < 5; i++) if (special[ch][j] & (0x10 >> i)) px_mix(s, x + i, y + j, c, a);
+            for (int j = 0; j < FONT_H; j++) for (int i = 0; i < 5; i++) if (special[ch][j] & (1 << i)) px_mix(s, x + i, y + j, c, a);
         } else if (ch >= 32 && ch < 127) {
             const u8 *g = font6[ch - 32];
             for (int j = 0; j < FONT_H; j++) for (int i = 0; i < FONT_W; i++) if (g[j] & (1 << i)) px_mix(s, x + i, y + j, c, a);
@@ -305,7 +315,7 @@ static void build_sky(void) {
 // Game state
 // ---------------------------------------------------------------------------
 #define MAXPHOTOS 12
-typedef struct { u16 *px; char label[24]; u8 stars; } Photo;
+typedef struct { u16 *px; char label[24]; u8 stars; u16 id; } Photo;
 enum { MODE_CAM, MODE_ALBUM, MODE_VIEW };
 static struct {
     float ra, dec, fov, targetFov, vra, vdec;
@@ -400,30 +410,35 @@ static void spawn_meteor(void) {
 // Drawing the sky
 // ---------------------------------------------------------------------------
 static s8 sin_tab[256];
-static void draw_star(u16 *s, int x, int y, float mag, RGB c, float tw) {
-    float b = (6.8f - mag) / 6.5f; if (b < 0) b = 0; if (b > 1) b = 1;
-    float zb = 1 + (40 - G.fov) / 60; if (zb > 1.6f) zb = 1.6f; if (zb < 1) zb = 1;
-    float r = (0.35f + b * 1.6f) * zb;
-    float al = (0.25f + b * 0.9f) * tw; if (al > 1) al = 1;
-    int a = (int)(al * 256);
-    if (r < 0.9f) { px_add(s, x, y, c, a); return; }
+static int g_zoomboost = 256; // Q8, set once per frame
+
+// mag10 = magnitude * 10, tw = twinkle 0..256
+static void draw_star(u16 *s, int x, int y, int mag10, RGB c, int tw) {
+    if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return;
+    int b = (68 - mag10) * 256 / 65; if (b < 0) b = 0; if (b > 256) b = 256;   // brightness Q8
+    int r = ((90 + (b * 410 >> 8)) * g_zoomboost) >> 8;                       // radius Q8
+    int a = ((64 + (b * 230 >> 8)) * tw) >> 8; if (a > 256) a = 256;
     px_add(s, x, y, c, a);
-    int ri = (int)(r + 0.5f);
+    if (r < 230) return;
+    int ri = (r + 128) >> 8, r4 = r >> 4; // r4: radius in Q4
     for (int j = -ri; j <= ri; j++) for (int i = -ri; i <= ri; i++) {
         if (!i && !j) continue;
-        float d = sqrtf((float)(i * i + j * j));
-        if (d <= r) px_add(s, x + i, y + j, c, (int)(a * (1.1f - d / (r + 0.6f))));
+        int d = isqrt4[i * i + j * j];                // Q4
+        if (d > r4) continue;
+        int k = 282 - (d * 4096) / (r4 * 16 + 154);  // 1.1 - d/(r+0.6), Q8
+        px_add(s, x + i, y + j, c, (a * k) >> 8);
     }
-    if (b > 0.55f) {
-        int gr = (int)(r * 2.6f);
+    if (b > 141) {
+        int g4 = (r4 * 666) >> 8, gr = g4 >> 4;
+        if (g4 <= 0) return;
         for (int j = -gr; j <= gr; j++) for (int i = -gr; i <= gr; i++) {
-            float d = sqrtf((float)(i * i + j * j));
-            if (d > r && d <= gr) px_add(s, x + i, y + j, c, (int)(a * 0.22f * (1 - d / gr)));
+            int d = isqrt4[i * i + j * j];
+            if (d > r4 && d <= g4) px_add(s, x + i, y + j, c, (((a * 56) >> 8) * (256 - d * 256 / g4)) >> 8);
         }
-        if (b > 0.75f) {
-            int sl = (int)(r * 3.5f);
+        if (b > 192) {
+            int sl = (r * 3584 >> 8) >> 10; // r * 3.5 in pixels
             for (int k = ri + 1; k <= sl; k++) {
-                int aa = (int)(a * 0.45f * (1 - (float)k / (sl + 1)));
+                int aa = ((a * 115) >> 8) * (256 - k * 256 / (sl + 1)) >> 8;
                 px_add(s, x + k, y, c, aa); px_add(s, x - k, y, c, aa); px_add(s, x, y + k, c, aa); px_add(s, x, y - k, c, aa);
             }
         }
@@ -432,87 +447,113 @@ static void draw_star(u16 *s, int x, int y, float mag, RGB c, float tw) {
 
 static float body_radius(const Body *b) { float r = (b->size * D2R / 2) * P.scale; return r < 0.8f ? 0.8f : r; }
 
+// Rotated ellipse arc for Saturn's rings, using the integer sine table.
+static void ring_arc(u16 *s, int cx, int cy, int a, int b, int from, int to, u16 col) {
+    const int ct = 15411, st = -5627; // cos/sin(-0.35) in Q14
+    int n = (a * 6) + 16; if (n > 1024) n = 1024;
+    for (int i = 0; i <= n; i++) {
+        int ang = from + (to - from) * i / n;
+        int ex = (COS1K(ang) * a) >> 14, ey = (SIN1K(ang) * b) >> 14;
+        px_set(s, cx + ((ex * ct - ey * st) >> 14), cy + ((ex * st + ey * ct) >> 14), col);
+    }
+}
+
 static void draw_body(u16 *s, const Body *b, float t) {
-    float x, y; if (!proj(b->v, &x, &y)) return;
+    (void)t;
+    float xf, yf; if (!proj(b->v, &xf, &yf)) return;
     float rad = body_radius(b);
-    if (x < -rad * 25 || x > W + rad * 25 || y < -rad * 25 || y > H + rad * 25) return;
+    if (xf < -rad * 25 || xf > W + rad * 25 || yf < -rad * 25 || yf > H + rad * 25) return;
+    int x = (int)xf, y = (int)yf;
+    // Normalised coordinates: 256 = one radius. Stepped per pixel in Q12 to avoid divisions.
+    int step = (int)(256.0f / rad * 4096);
     if (b->kind == K_MOON) {
-        // glow
-        int gr = (int)(rad * 3);
-        int x0 = (int)x - gr, x1 = (int)x + gr, y0 = (int)y - gr, y1 = (int)y + gr;
+        int ir = (int)rad;
+        int gr = ir < 85 ? ir * 3 : ir + 1; // skip the glow when the Moon is huge
+        int x0 = x - gr, x1 = x + gr, y0 = y - gr, y1 = y + gr;
         if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= W) x1 = W - 1; if (y1 >= H) y1 = H - 1;
-        RGB glow = hexc(0xfff8e0), base = hexc(0xece6d0), cr1 = hexc(0xc9c2aa), cr2 = hexc(0xb5ad94), shadow = hexc(0x0a0d22);
-        static const float craters[7][3] = { {-.3f,-.2f,.28f},{.25f,-.35f,.18f},{.1f,.25f,.22f},{-.35f,.35f,.12f},{.45f,.15f,.1f},{-.05f,-.5f,.08f},{.35f,.55f,.09f} };
-        static const float craters2[5][3] = { {-.25f,-.15f,.08f},{.3f,-.3f,.05f},{.12f,.3f,.07f},{-.1f,.6f,.04f},{.6f,-.1f,.05f} };
-        for (int py = y0; py <= y1; py++) for (int pxx = x0; pxx <= x1; pxx++) {
-            float dx = (pxx + 0.5f - x) / rad, dy = (py + 0.5f - y) / rad, d2 = dx * dx + dy * dy;
-            if (d2 > 1) { float d = sqrtf(d2); if (d < 3) px_add(s, pxx, py, glow, (int)(85 * (1 - (d - 1) / 2) * (1 - (d - 1) / 2))); continue; }
-            RGB c = base;
-            for (int k = 0; k < 7; k++) { float ex = dx - craters[k][0], ey = dy - craters[k][1]; if (ex * ex + ey * ey < craters[k][2] * craters[k][2]) c = cr1; }
-            for (int k = 0; k < 5; k++) { float ex = dx - craters2[k][0], ey = dy - craters2[k][1]; if (ex * ex + ey * ey < craters2[k][2] * craters2[k][2]) c = cr2; }
-            px_set(s, pxx, py, c15(c));
-            float sx = (dx + 0.55f) / 0.75f, sy = dy / 1.05f; // waxing gibbous shadow
-            if (sx * sx + sy * sy < 1) px_mix(s, pxx, py, shadow, 222);
+        RGB glow = hexc(0xfff8e0), shadow = hexc(0x0a0d22);
+        u16 base = c15(hexc(0xece6d0)), cr1 = c15(hexc(0xc9c2aa)), cr2 = c15(hexc(0xb5ad94));
+        static const s16 craters[7][3] = { {-77,-51,72},{64,-90,46},{26,64,56},{-90,90,31},{115,38,26},{-13,-128,20},{90,141,23} };
+        static const s16 craters2[5][3] = { {-64,-38,20},{77,-77,13},{31,77,18},{-26,154,10},{154,-26,13} };
+        int r2px = (int)(rad * rad);
+        for (int py = y0; py <= y1; py++) {
+            int dy = (int)((py + 0.5f - yf) * 256.0f / rad);
+            int dyp = py - y, dy2 = dy * dy;
+            int dxq = (int)((x0 + 0.5f - xf) * 256.0f / rad * 4096);
+            for (int pxx = x0; pxx <= x1; pxx++, dxq += step) {
+                int dx = dxq >> 12, d2 = dx * dx + dy2; // Q16, 65536 = edge
+                if (d2 > 65536) {
+                    int dxp = pxx - x, dp2 = dxp * dxp + dyp * dyp;
+                    if (gr > ir + 1 && dp2 < 9 * r2px && dp2 < 65536) {
+                        int d4 = isqrt4[dp2];                       // pixels, Q4
+                        int k = 256 - ((d4 - ir * 16) * 128) / (ir * 16 + 1); // 1 - (d-1)/2, Q8
+                        if (k > 0) px_add(s, pxx, py, glow, (85 * k >> 8) * k >> 8);
+                    }
+                    continue;
+                }
+                u16 c = base;
+                for (int k = 0; k < 7; k++) { int ex = dx - craters[k][0], ey = dy - craters[k][1]; if (ex * ex + ey * ey < craters[k][2] * craters[k][2]) c = cr1; }
+                for (int k = 0; k < 5; k++) { int ex = dx - craters2[k][0], ey = dy - craters2[k][1]; if (ex * ex + ey * ey < craters2[k][2] * craters2[k][2]) c = cr2; }
+                s[py * W + pxx] = c;
+                int sx = ((dx + 141) * 341) >> 8, sy = (dy * 244) >> 8; // waxing gibbous shadow
+                if (sx * sx + sy * sy < 65536) px_mix(s, pxx, py, shadow, 222);
+            }
         }
     } else if (b->kind == K_JUPITER || b->kind == K_SATURN) {
         bool J = b->kind == K_JUPITER;
-        if (rad < 2) { draw_star(s, (int)x, (int)y, J ? -2 : 0.6f, J ? hexc(0xfff3dc) : hexc(0xffe6a8), 1); return; }
-        RGB ring = hexc(0xd9c38c);
-        float th = -0.35f, ct = cosf(th), st = sinf(th);
-        if (!J) { // back half of ring
-            for (float k = 1.85f; k <= 2.35f; k += 0.08f) {
-                int n = (int)(rad * k * 8) + 16;
-                for (int i = 0; i < n / 2; i++) { float a = PI_F + PI_F * i / (n / 2), ex = cosf(a) * rad * k, ey = sinf(a) * rad * k * 0.26f;
-                    px_set(s, (int)(x + ex * ct - ey * st), (int)(y + ex * st + ey * ct), c15(ring)); }
-            }
-        }
+        if (rad < 2) { draw_star(s, x, y, J ? -20 : 6, J ? hexc(0xfff3dc) : hexc(0xffe6a8), 256); return; }
+        u16 ring = c15(hexc(0xd9c38c));
+        int ir = (int)rad;
+        if (!J) for (int k = 0; k < 7; k++) { int ra = ir * (185 + k * 8) / 100; ring_arc(s, x, y, ra, ra * 26 / 100, 512, 1024, ring); }
         RGB body = J ? hexc(0xe9d6b6) : hexc(0xe6cf96);
-        static const float jb[4][2] = { {-.55f,.14f},{-.2f,.18f},{.2f,.12f},{.5f,.10f} };
+        static const s16 jb[4][2] = { {-141,72},{-51,92},{51,61},{128,51} };
         static const u32 jc[4] = { 0xb98e66, 0xa7764f, 0xc19a72, 0x9c7350 };
-        static const float sbnd[2][2] = { {-.3f,.15f},{.25f,.12f} };
+        static const s16 sbnd[2][2] = { {-77,77},{64,61} };
         static const u32 sc[2] = { 0xc9ae72, 0xbba066 };
-        int x0 = (int)(x - rad - 1), x1 = (int)(x + rad + 1), y0 = (int)(y - rad - 1), y1 = (int)(y + rad + 1);
-        for (int py = y0; py <= y1; py++) for (int pxx = x0; pxx <= x1; pxx++) {
-            float dx = (pxx + 0.5f - x) / rad, dy = (py + 0.5f - y) / rad;
-            if (dx * dx + dy * dy > 1) continue;
-            RGB c = body;
-            int nb = J ? 4 : 2;
-            for (int k = 0; k < nb; k++) { float o = J ? jb[k][0] : sbnd[k][0], h = (J ? jb[k][1] : sbnd[k][1]) * 2; if (dy >= o && dy < o + h) c = hexc(J ? jc[k] : sc[k]); }
-            if (J) { float ex = (dx - 0.3f) / 0.18f, ey = (dy - 0.35f) / 0.1f; if (ex * ex + ey * ey < 1) c = hexc(0xc0573c); }
-            // limb darkening
-            float l = 1 - 0.35f * (dx * dx + dy * dy);
-            RGB d = { (u8)(c.r * l), (u8)(c.g * l), (u8)(c.b * l) };
-            px_set(s, pxx, py, c15(d));
-        }
-        if (!J) { // front half of ring
-            for (float k = 1.85f; k <= 2.35f; k += 0.08f) {
-                int n = (int)(rad * k * 8) + 16;
-                for (int i = 0; i < n / 2; i++) { float a = PI_F * i / (n / 2), ex = cosf(a) * rad * k, ey = sinf(a) * rad * k * 0.26f;
-                    px_set(s, (int)(x + ex * ct - ey * st), (int)(y + ex * st + ey * ct), c15(ring)); }
+        int x0 = x - ir - 1, x1 = x + ir + 1, y0 = y - ir - 1, y1 = y + ir + 1;
+        if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= W) x1 = W - 1; if (y1 >= H) y1 = H - 1;
+        for (int py = y0; py <= y1; py++) {
+            int dy = (int)((py + 0.5f - yf) * 256.0f / rad);
+            int dxq = (int)((x0 + 0.5f - xf) * 256.0f / rad * 4096);
+            for (int pxx = x0; pxx <= x1; pxx++, dxq += step) {
+                int dx = dxq >> 12, d2 = dx * dx + dy * dy;
+                if (d2 > 65536) continue;
+                RGB c = body;
+                int nb = J ? 4 : 2;
+                for (int k = 0; k < nb; k++) { int o = J ? jb[k][0] : sbnd[k][0], h = J ? jb[k][1] : sbnd[k][1]; if (dy >= o && dy < o + h) c = hexc(J ? jc[k] : sc[k]); }
+                if (J) { int ex = ((dx - 77) * 256) / 46, ey = ((dy - 90) * 256) / 26; if (ex * ex + ey * ey < 65536) c = hexc(0xc0573c); }
+                int l = 256 - ((90 * (d2 >> 8)) >> 8); // limb darkening
+                s[py * W + pxx] = C15(c.r * l >> 8, c.g * l >> 8, c.b * l >> 8);
             }
-        } else {
-            static const float moons[4][2] = { {-3.2f,.1f},{-1.9f,-.05f},{2.4f,.05f},{4.1f,-.1f} };
-            for (int k = 0; k < 4; k++) { int mx = (int)(x + moons[k][0] * rad), my = (int)(y + moons[k][1] * rad);
+        }
+        if (!J) for (int k = 0; k < 7; k++) { int ra = ir * (185 + k * 8) / 100; ring_arc(s, x, y, ra, ra * 26 / 100, 0, 512, ring); }
+        else {
+            static const s16 moons[4][2] = { {-320,10},{-190,-5},{240,5},{410,-10} };
+            for (int k = 0; k < 4; k++) { int mx = x + moons[k][0] * ir / 100, my = y + moons[k][1] * ir / 100;
                 px_set(s, mx, my, C15(255, 255, 255)); px_add(s, mx + 1, my, hexc(0xffffff), 120); px_add(s, mx, my + 1, hexc(0xffffff), 120); }
         }
-    } else { // comet
-        float len = rad * 22, ang = -0.6f + sinf(t * 0.1f) * 0.02f;
-        float ux = cosf(ang), uy = sinf(ang), nx = -uy, ny = ux;
+    } else { // comet: tail points up and to the right
+        int len = (int)(rad * 22);
+        const int ux = 211, uy = -145, nx = 145, ny = 211; // cos/sin(-0.6) in Q8 and the normal
         RGB tail = hexc(0xbfffe8), ion = hexc(0x9fc3ff);
-        for (float sd = 0; sd < len; sd += 0.7f) {
-            float k = sd / len, wv = rad + len * 0.15f * k;
-            int a = (int)(150 * (1 - k));
-            for (float w = -wv * 0.7f; w <= wv; w += 0.7f) {
-                float edge = 1 - fabsf(w) / (wv + 0.01f);
-                px_add(s, (int)(x + ux * sd + nx * w), (int)(y + uy * sd + ny * w), tail, (int)(a * edge * 0.45f));
+        int ir = (int)rad; if (ir < 1) ir = 1;
+        for (int sd = 0; sd < len; sd++) {
+            int cxp = x + (ux * sd >> 8), cyp = y + (uy * sd >> 8);
+            int wv = ir + (len * 38 >> 8) * sd / len; // rad + len*0.15*k
+            if (cxp < -wv || cxp > W + wv || cyp < -wv || cyp > H + wv) continue;
+            int a = 150 * (len - sd) / len;
+            for (int w = -wv * 7 / 10; w <= wv; w++) {
+                int edge = 256 - (w < 0 ? -w : w) * 256 / (wv + 1);
+                px_add(s, cxp + (nx * w >> 8), cyp + (ny * w >> 8), tail, (a * edge >> 8) * 160 >> 8);
             }
         }
-        float ia = ang - 0.15f;
-        draw_line(s, x, y, x + cosf(ia) * len * 0.8f, y + sinf(ia) * len * 0.8f, ion, 60, 0, true);
-        int hr = (int)(rad * 2.5f) + 1;
+        draw_line(s, xf, yf, xf + 0.743f * len, yf - 0.669f * len, ion, 60, 0, true);
+        int hr = (int)(rad * 2.5f) + 1, hr4 = hr * 16;
+        RGB white = hexc(0xffffff), head = hexc(0xc8fff0);
         for (int j = -hr; j <= hr; j++) for (int i = -hr; i <= hr; i++) {
-            float d = sqrtf((float)(i * i + j * j)) / hr; if (d > 1) continue;
-            px_add(s, (int)x + i, (int)y + j, d < 0.3f ? hexc(0xffffff) : hexc(0xc8fff0), (int)(256 * (1 - d)));
+            int n = i * i + j * j; if (n >= 65536) continue;
+            int d = isqrt4[n] * 256 / hr4; if (d > 256) continue;
+            px_add(s, x + i, y + j, d < 77 ? white : head, 256 - d);
         }
     }
 }
@@ -520,13 +561,16 @@ static void draw_body(u16 *s, const Body *b, float t) {
 static u8 cloudmap[48][64];
 static void draw_sky(u16 *s, float t) {
     setup_proj();
+    float zb = 1 + (40 - G.fov) / 60; if (zb > 1.6f) zb = 1.6f; if (zb < 1) zb = 1;
+    g_zoomboost = (int)(zb * 256);
     // background gradient
     float low = (-G.dec + 10) / 80; if (low < 0) low = 0; if (low > 1) low = 1;
+    int rb = (int)(low > 0 ? 8 + low * 14 : 7), gb = (int)(low > 0 ? 10 + low * 12 : 10), bb = (int)(low > 0 ? 28 + low * 14 : 28);
     for (int y = 0; y < H; y++) {
-        float k = (float)y / H;
-        int r = (int)(3 + k * ((low > 0 ? 8 + low * 14 : 7) - 3)), g = (int)(4 + k * ((low > 0 ? 10 + low * 12 : 10) - 4)), b = (int)(12 + k * ((low > 0 ? 28 + low * 14 : 28) - 12));
-        u16 c = C15(r, g, b);
-        u32 c2 = c | ((u32)c << 16);
+        // 2x2 ordered dither hides the 5-bit colour banding of the dark gradient
+        int r = 3 + (rb - 3) * y / H, g = 4 + (gb - 4) * y / H, b = 12 + (bb - 12) * y / H, o = (y & 1) ? 6 : 2;
+        u16 ca = C15(r + o, g + o, b + o), cb = C15(r + 4 - o + 4, g + 4 - o + 4, b + 4 - o + 4);
+        u32 c2 = ca | ((u32)cb << 16);
         u32 *row = (u32 *)&s[y * W];
         for (int x = 0; x < W / 2; x++) row[x] = c2;
     }
@@ -535,7 +579,7 @@ static void draw_sky(u16 *s, float t) {
     for (int i = 0; i < NDUST; i++) {
         int x, y; if (!proj16(dust[i].v, &x, &y)) continue;
         if (x < 0 || x >= W || y < 0 || y >= H) continue;
-        int a = (int)((0.07f + (6.9f - dust[i].mag10 / 10.0f) * 0.05f) * 256);
+        int a = 18 + (69 - dust[i].mag10) * 128 / 100; // (0.07 + (6.9 - mag) * 0.05) * 256
         px_add(s, x, y, mw, a); px_add(s, x + 1, y, mw, a); px_add(s, x, y + 1, mw, a); px_add(s, x + 1, y + 1, mw, a);
     }
     // stars
@@ -545,11 +589,12 @@ static void draw_sky(u16 *s, float t) {
         if (stars[i].mag10 > lim10) continue;
         int x, y; if (!proj16(stars[i].v, &x, &y)) continue;
         if (x < -2 || x > W + 2 || y < -2 || y > H + 2) continue;
-        float tw = 0.8f + 0.2f * sin_tab[(stars[i].ph + ti * stars[i].sp) & 255] / 127.0f;
-        draw_star(s, x, y, stars[i].mag10 / 10.0f, star_pal[stars[i].col], tw);
+        int tw = 205 + (51 * sin_tab[(stars[i].ph + ti * stars[i].sp) & 255]) / 127;
+        draw_star(s, x, y, stars[i].mag10, star_pal[stars[i].col], tw);
     }
     // constellations
     RGB gold = hexc(0xffd36b), guide = hexc(0x7e95ff), white = hexc(0xf4f7ff);
+    int t60 = (int)(t * 60);
     for (int i = 0; i < NCONST; i++) {
         Const *c = &CONST[i];
         float px[13], py[13]; bool ok[13];
@@ -566,8 +611,8 @@ static void draw_sky(u16 *s, float t) {
             if (!ok[k] || px[k] < -4 || px[k] > W + 4 || py[k] < -4 || py[k] > H + 4) continue;
             RGB col = white;
             for (int q = 0; q < c->ncolors; q++) if (c->colors[q].idx == k) col = hexc(c->colors[q].color);
-            float tw = 0.85f + 0.15f * sin_tab[(int)(t * 60 + k * 70) & 255] / 127.0f;
-            draw_star(s, (int)px[k], (int)py[k], c->stars[k].mag, col, tw);
+            int tw = 218 + (38 * sin_tab[(t60 + k * 70) & 255]) / 127;
+            draw_star(s, (int)px[k], (int)py[k], (int)(c->stars[k].mag * 10), col, tw);
         }
         if (done) {
             float cx, cy;
@@ -584,10 +629,11 @@ static void draw_sky(u16 *s, float t) {
         float k = m->life / m->max, hx = m->x + m->vx * m->life, hy = m->y + m->vy * m->life;
         float tx = hx - m->vx * 0.12f, ty = hy - m->vy * 0.12f;
         int n = (int)fmaxf(fabsf(tx - hx), fabsf(ty - hy)) + 1;
-        for (int j = 0; j <= n; j++) {
-            float f = (float)j / n;
-            px_add(s, (int)(hx + (tx - hx) * f), (int)(hy + (ty - hy) * f), f < 0.3f ? hexc(0xffffff) : hexc(0xa0c8ff), (int)(256 * (1 - k) * (1 - f)));
-        }
+        int fx = (int)(hx * 256), fy = (int)(hy * 256), sx = (int)((tx - hx) * 256) / n, sy = (int)((ty - hy) * 256) / n;
+        int a0 = (int)(256 * (1 - k));
+        RGB white = hexc(0xffffff), blue = hexc(0xa0c8ff);
+        for (int j = 0; j <= n; j++, fx += sx, fy += sy)
+            px_add(s, fx >> 8, fy >> 8, j * 10 < n * 3 ? white : blue, a0 * (n - j) / n);
     }
     // clouds (via a 4x4-pixel cell coverage map)
     memset(cloudmap, 0, sizeof cloudmap);
@@ -597,13 +643,15 @@ static void draw_sky(u16 *s, float t) {
         float r = clouds[i].r * D2R * P.scale;
         if (cx < -r * 3 || cx > W + r * 3 || cy < -r * 3 || cy > H + r * 3) continue;
         for (int k = 0; k < 6; k++) {
-            float gx = cx + clouds[i].puff[k][0] * r, gy = cy + clouds[i].puff[k][1] * r, rr = r * clouds[i].puff[k][2];
-            int c0 = (int)((gx - rr) / 4), c1 = (int)((gx + rr) / 4) + 1, r0 = (int)((gy - rr) / 4), r1 = (int)((gy + rr) / 4) + 1;
+            int gx = (int)(cx + clouds[i].puff[k][0] * r), gy = (int)(cy + clouds[i].puff[k][1] * r), rr = (int)(r * clouds[i].puff[k][2]);
+            if (rr < 1) continue;
+            int c0 = (gx - rr) >> 2, c1 = ((gx + rr) >> 2) + 1, r0 = (gy - rr) >> 2, r1 = ((gy + rr) >> 2) + 1;
             if (c0 < 0) c0 = 0; if (r0 < 0) r0 = 0; if (c1 > 63) c1 = 63; if (r1 > 47) r1 = 47;
+            int rr4 = rr * 16;
             for (int cyc = r0; cyc <= r1; cyc++) for (int cxc = c0; cxc <= c1; cxc++) {
-                float dx = cxc * 4 + 2 - gx, dy = cyc * 4 + 2 - gy, d = sqrtf(dx * dx + dy * dy);
-                if (d >= rr) continue;
-                int a = (int)(190 * (1 - d / rr));
+                int dx = cxc * 4 + 2 - gx, dy = cyc * 4 + 2 - gy, d4 = isqrt_q4(dx * dx + dy * dy);
+                if (d4 >= rr4) continue;
+                int a = 190 - 190 * d4 / rr4;
                 int cur = cloudmap[cyc][cxc]; cur = cur + a - ((cur * a) >> 8); if (cur > 235) cur = 235;
                 cloudmap[cyc][cxc] = (u8)cur; any = true;
             }
@@ -611,8 +659,9 @@ static void draw_sky(u16 *s, float t) {
     }
     if (any) {
         RGB cc = hexc(0x20243e);
-        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
-            int a = cloudmap[y >> 2][x >> 2]; if (a) px_mix(s, x, y, cc, a);
+        for (int cy = 0; cy < 48; cy++) for (int cx = 0; cx < 64; cx++) {
+            int a = cloudmap[cy][cx]; if (!a) continue;
+            for (int y = cy * 4; y < cy * 4 + 4; y++) for (int x = cx * 4; x < cx * 4 + 4; x++) px_mix(s, x, y, cc, a);
         }
     }
 }
@@ -733,7 +782,9 @@ static int evaluate(Result *out) {
 // ---------------------------------------------------------------------------
 #define SAVE_FILE "starcam.sav"
 #define PHOTO_DIR "starcam_photos"
-typedef struct { char magic[4]; u8 found[NTARGETS]; u8 nphotos; char labels[MAXPHOTOS][24]; u8 pstars[MAXPHOTOS]; } SaveData;
+typedef struct { char magic[4]; u8 found[NTARGETS]; u8 nphotos; char labels[MAXPHOTOS][24]; u8 pstars[MAXPHOTOS]; u16 ids[MAXPHOTOS]; u16 next_id; } SaveData;
+static u16 next_photo_id = 1;
+static void photo_path(char *buf, int n, u16 id) { snprintf(buf, n, PHOTO_DIR "/starcam_%04u.bmp", id); }
 
 static void write_bmp(const char *path, const u16 *px) {
     FILE *f = fopen(path, "wb"); if (!f) return;
@@ -759,31 +810,37 @@ static bool read_bmp(const char *path, u16 *px) {
     }
     fclose(f); return true;
 }
-static void save_all(bool photos_changed) {
+// Saves progress and the album index. Each photo is its own BMP file, written once
+// when it is taken (save_photo) and removed when it is deleted (remove_photo).
+static void save_all(void) {
     if (!G.sd) return;
     SaveData sd; memset(&sd, 0, sizeof sd);
-    memcpy(sd.magic, "SCM1", 4); memcpy(sd.found, G.found, sizeof G.found); sd.nphotos = G.nphotos;
-    for (int i = 0; i < G.nphotos; i++) { memcpy(sd.labels[i], G.photos[i].label, 24); sd.pstars[i] = G.photos[i].stars; }
+    memcpy(sd.magic, "SCM2", 4); memcpy(sd.found, G.found, sizeof G.found); sd.nphotos = G.nphotos; sd.next_id = next_photo_id;
+    for (int i = 0; i < G.nphotos; i++) { memcpy(sd.labels[i], G.photos[i].label, 24); sd.pstars[i] = G.photos[i].stars; sd.ids[i] = G.photos[i].id; }
     FILE *f = fopen(SAVE_FILE, "wb"); if (f) { fwrite(&sd, 1, sizeof sd, f); fclose(f); }
-    if (photos_changed) {
-        mkdir(PHOTO_DIR, 0777);
-        char path[64];
-        for (int i = 0; i < G.nphotos; i++) { snprintf(path, sizeof path, PHOTO_DIR "/photo%02d.bmp", i + 1); write_bmp(path, G.photos[i].px); }
-        for (int i = G.nphotos; i < MAXPHOTOS; i++) { snprintf(path, sizeof path, PHOTO_DIR "/photo%02d.bmp", i + 1); remove(path); }
-    }
+}
+static void save_photo(const Photo *p) {
+    if (!G.sd) return;
+    mkdir(PHOTO_DIR, 0777);
+    char path[64]; photo_path(path, sizeof path, p->id); write_bmp(path, p->px);
+}
+static void remove_photo(const Photo *p) {
+    if (!G.sd) return;
+    char path[64]; photo_path(path, sizeof path, p->id); remove(path);
 }
 static void load_all(void) {
     if (!G.sd) return;
     SaveData sd; FILE *f = fopen(SAVE_FILE, "rb"); if (!f) return;
     bool ok = fread(&sd, 1, sizeof sd, f) == sizeof sd; fclose(f);
-    if (!ok || memcmp(sd.magic, "SCM1", 4)) return;
+    if (!ok || memcmp(sd.magic, "SCM2", 4)) return;
     memcpy(G.found, sd.found, sizeof G.found);
+    next_photo_id = sd.next_id ? sd.next_id : 1;
     char path[64];
     for (int i = 0; i < sd.nphotos && i < MAXPHOTOS; i++) {
         u16 *px = malloc(W * H * 2); if (!px) break;
-        snprintf(path, sizeof path, PHOTO_DIR "/photo%02d.bmp", i + 1);
+        photo_path(path, sizeof path, sd.ids[i]);
         if (!read_bmp(path, px)) { free(px); continue; }
-        Photo *p = &G.photos[G.nphotos++]; p->px = px; memcpy(p->label, sd.labels[i], 24); p->label[23] = 0; p->stars = sd.pstars[i];
+        Photo *p = &G.photos[G.nphotos++]; p->px = px; memcpy(p->label, sd.labels[i], 24); p->label[23] = 0; p->stars = sd.pstars[i]; p->id = sd.ids[i];
     }
 }
 
@@ -825,7 +882,7 @@ static void finish_photo(const u16 *frame) {
         sfx(220, 9, 40, false, 0);
     }
     // keep the photo
-    if (G.nphotos == MAXPHOTOS) { free(G.photos[0].px); memmove(&G.photos[0], &G.photos[1], sizeof(Photo) * (MAXPHOTOS - 1)); G.nphotos--; }
+    if (G.nphotos == MAXPHOTOS) { remove_photo(&G.photos[0]); free(G.photos[0].px); memmove(&G.photos[0], &G.photos[1], sizeof(Photo) * (MAXPHOTOS - 1)); G.nphotos--; }
     u16 *px = malloc(W * H * 2);
     if (px) {
         memcpy(px, frame, W * H * 2);
@@ -835,8 +892,10 @@ static void finish_photo(const u16 *frame) {
         time_t now = time(NULL); struct tm *tm = localtime(&now);
         if (tm) { char d[16]; snprintf(d, sizeof d, "%04d-%02d-%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday); draw_text_r(px, W - 8, H - 16, d, hexc(0xffffff), 150); }
         Photo *p = &G.photos[G.nphotos++]; p->px = px; snprintf(p->label, sizeof p->label, "%s", label); p->stars = stars;
+        p->id = next_photo_id++; if (!next_photo_id) next_photo_id = 1;
+        save_photo(p);
     }
-    save_all(true);
+    save_all();
 }
 
 // ---------------------------------------------------------------------------
@@ -914,11 +973,14 @@ static void draw_bottom_cam(u16 *s, float t) {
     // shutter
     int sx = 210, sy = 131, sr = 26; bool pr = held_btn == B_SHOOT || (keysHeld() & KEY_A);
     fill_circle(s, sx, sy, sr + 3, hexc(0x0d1130), 256);
-    for (int r = sr; r > 0; r--) {
-        float k2 = (float)r / sr;
+    { // radial gradient lit from the upper left
         RGB a = pr ? hexc(0xff9a7a) : hexc(0xffb59e), b = pr ? hexc(0xb8343f) : hexc(0xe2475a);
-        RGB c = { (u8)(a.r + (b.r - a.r) * k2), (u8)(a.g + (b.g - a.g) * k2), (u8)(a.b + (b.b - a.b) * k2) };
-        fill_circle(s, sx - (1 - k2) * 5, sy + pr - (1 - k2) * 5, r, c, 256);
+        int cy = sy + pr, hx = sx - 6, hy = cy - 6, span = sr + 8;
+        for (int y = cy - sr; y <= cy + sr; y++) for (int x = sx - sr; x <= sx + sr; x++) {
+            int dx = x - sx, dy = y - cy; if (dx * dx + dy * dy > sr * sr) continue;
+            int ex = x - hx, ey = y - hy, k = isqrt4[ex * ex + ey * ey] / span; if (k > 16) k = 16; // 0..16
+            px_set(s, x, y, C15(a.r + (b.r - a.r) * k / 16, a.g + (b.g - a.g) * k / 16, a.b + (b.b - a.b) * k / 16));
+        }
     }
     stroke_circle(s, sx, sy + pr, sr - 7, hexc(0xffffff), 110);
     draw_text_c(s, sx, sy - 4 + pr, "SNAP", hexc(0xffffff), 256);
@@ -989,9 +1051,9 @@ static void press(int id, int tx) {
         case B_BACK: G.mode = MODE_CAM; beep(500, 3); break;
         case B_DEL:
             if (G.sel < G.nphotos) {
-                free(G.photos[G.sel].px);
+                remove_photo(&G.photos[G.sel]); free(G.photos[G.sel].px);
                 memmove(&G.photos[G.sel], &G.photos[G.sel + 1], sizeof(Photo) * (G.nphotos - G.sel - 1));
-                G.nphotos--; if (G.sel >= G.nphotos && G.sel) G.sel--; G.mode = MODE_ALBUM; save_all(true); sfx(180, 6, 40, false, 0);
+                G.nphotos--; if (G.sel >= G.nphotos && G.sel) G.sel--; G.mode = MODE_ALBUM; save_all(); sfx(180, 6, 40, false, 0);
             }
             break;
         default:
@@ -1002,6 +1064,8 @@ static void press(int id, int tx) {
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     for (int i = 0; i < 256; i++) sin_tab[i] = (s8)(sinf(i * 2 * PI_F / 256) * 127);
+    for (int i = 0; i < 1024; i++) sin1k[i] = (s16)(sinf(i * 2 * PI_F / 1024) * 16384);
+    { int r = 0; for (int n = 0; n < 65536; n++) { while ((r + 1) * (r + 1) <= n * 256) r++; isqrt4[n] = (u16)r; } }
 
     videoSetMode(MODE_5_2D);
     videoSetModeSub(MODE_5_2D);
@@ -1027,11 +1091,15 @@ int main(int argc, char **argv) {
     G.sd = fatInitDefault();
     build_sky();
     load_all();
+#ifdef TEST_RA // test builds only: start pointed at a given spot
+    G.ra = TEST_RA; G.dec = TEST_DEC; G.fov = G.targetFov = TEST_FOV;
+#endif
     toast("STARCAM", "Aim at Orion and press A!", -1, true);
     if (!G.sd) toast("STARCAM", "No SD card found: no saving", -1, true);
 
-    int front = 0, last_vbl = vbl_count;
+    int front = 0, last_vbl = vbl_count, frame_no = 0, last_mode = -1, fps_vbl = 0, fps_frames = 0, fps_show = 0;
     bool touching = false;
+    u32 last_held = 0;
 
     while (1) {
         int now = vbl_count, frames = now - last_vbl; last_vbl = now;
@@ -1101,20 +1169,31 @@ int main(int argc, char **argv) {
         }
         draw_toast(topbuf);
 
-        // bottom screen
-        nbtns = 0;
-        for (int y = 0; y < H; y++) { u16 c = (y & 1) ? C15(11, 14, 34) : C15(13, 16, 37); for (int x = 0; x < W; x++) botbuf[y * W + x] = c; }
-        if (G.mode == MODE_CAM) draw_bottom_cam(botbuf, t); else draw_bottom_album(botbuf);
+        // bottom screen: redraw on input or mode change, otherwise ~10 times a second
+        bool bot_dirty = (frame_no % 4 == 0) || down || heldk != last_held || touching || G.mode != last_mode;
+        last_held = heldk; last_mode = G.mode; frame_no++;
+        if (bot_dirty) {
+            nbtns = 0;
+            for (int y = 0; y < H; y++) { u16 c = (y & 1) ? C15(11, 14, 34) : C15(13, 16, 37); for (int x = 0; x < W; x++) botbuf[y * W + x] = c; }
+            if (G.mode == MODE_CAM) draw_bottom_cam(botbuf, t); else draw_bottom_album(botbuf);
+        }
+#ifdef SHOW_FPS
+        fps_vbl += frames; fps_frames++;
+        if (fps_vbl >= 60) { fps_show = fps_frames * 600 / fps_vbl; fps_vbl = fps_frames = 0; }
+        { char fb[16]; snprintf(fb, sizeof fb, "%d.%d fps", fps_show / 10, fps_show % 10); fill_rect(topbuf, 100, 26, 56, 11, hexc(0), 256); draw_text(topbuf, 101, 27, fb, hexc(0x52ff9a), 256); }
+#else
+        (void)fps_vbl; (void)fps_frames; (void)fps_show;
+#endif
 
         // present: draw into the hidden top buffer, then flip on vblank
         int back = front ^ 1;
         DC_FlushRange(topbuf, sizeof topbuf);
-        DC_FlushRange(botbuf, sizeof botbuf);
+        if (bot_dirty) DC_FlushRange(botbuf, sizeof botbuf);
         dmaCopy(topbuf, topVram[back], sizeof topbuf);
         swiWaitForVBlank();
         bgSetMapBase(bgTop, back ? 8 : 0);
         bgUpdate();
-        dmaCopy(botbuf, botVram, sizeof botbuf);
+        if (bot_dirty) dmaCopy(botbuf, botVram, sizeof botbuf);
         front = back;
     }
     return 0;

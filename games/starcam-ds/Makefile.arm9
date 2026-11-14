@@ -33,7 +33,6 @@ DEFINES		:= -DSAMPLE_DEFINE -DSAMPLE_DEFINE_WITH_VALUE=123
 
 LIBS		:= -lnds9
 LIBDIRS		:= $(BLOCKSDS)/libs/libnds
-		   $(BLOCKSDS)/libs/libnds
 
 # Build artifacts
 # ---------------

@@ -1,0 +1,3085 @@
+!% -v5
+!% -~S
+Constant Story "NEON ASH";
+Constant Headline "^A text adventure in Port Halcyon, 2091.^";
+Release 1;
+Constant NFLAGS = 69;
+Constant NENDINGS = 34;
+Constant MAX_BURN = 12;
+Global v_body;
+Global v_burn;
+Global v_echo;
+Global v_heat;
+Global v_humanity;
+Global v_juno;
+Global v_mind;
+Global v_money;
+Global v_nerve;
+Global v_pts;
+Global v_reflex;
+Global v_rep_corp;
+Global v_rep_nomad;
+Global v_rep_saints;
+Global v_rep_static;
+Global v_tech;
+Global nvis;
+Array flags -> NFLAGS;
+Array namebuf -> 30;
+Global namelen;
+Array vis --> 12;
+Array ena -> 12;
+Array keybuf -> 4;
+
+[ Main n;
+  @erase_window -1;
+  Title();
+  for (n = 0 : n < NFLAGS : n++) flags->n = 0;
+  n = N_start;
+  while (n ~= 0) n = n(0);
+  @quit;
+];
+
+[ Title k i;
+  print "^^   N E O N   A S H^";
+  print "   ---------------^";
+  print "   A text adventure in Port Halcyon, 2091.^^";
+  print "   ", NENDINGS, " endings. Stats unlock options. Every choice matters.^^";
+  print "   Keys: 1-9 choose.  S save, R restore, T stats, Q quit.^^";
+  print "   1. New game^   2. Restore a saved game^^> ";
+  for (::) {
+    @read_char 1 -> k;
+    if (k == '1') break;
+    if (k == '2') { @restore -> i; print "^Could not restore.^> "; }
+  }
+  @erase_window -1;
+  print "IDENTIFY YOURSELF^^What do they call you on the street?^> ";
+  namebuf->0 = 24; namebuf->1 = 0;
+  @aread namebuf 0 -> i;
+  namelen = namebuf->1;
+  if (namelen == 0) {
+    namebuf->2 = 'v'; namebuf->3 = '0'; namebuf->4 = 'i'; namebuf->5 = 'd'; namelen = 4;
+  }
+];
+
+[ PName i c;
+  for (i = 0 : i < namelen : i++) {
+    c = namebuf->(i + 2);
+    if (i == 0 && c >= 'a' && c <= 'z') c = c - 32;
+    print (char) c;
+  }
+];
+
+[ PMoney n;
+  if (n >= 1000) { print n / 1000, ","; n = n % 1000;
+    if (n < 100) print "0"; if (n < 10) print "0"; }
+  print n;
+];
+
+[ Clamp;
+  if (v_body < 0) v_body = 0; if (v_body > 10) v_body = 10;
+  if (v_burn < 0) v_burn = 0; if (v_burn > 99) v_burn = 99;
+  if (v_heat < 0) v_heat = 0; if (v_heat > 99) v_heat = 99;
+  if (v_humanity < 0) v_humanity = 0; if (v_humanity > 10) v_humanity = 10;
+  if (v_mind < 0) v_mind = 0; if (v_mind > 10) v_mind = 10;
+  if (v_money < 0) v_money = 0; if (v_money > 32000) v_money = 32000;
+  if (v_nerve < 0) v_nerve = 0; if (v_nerve > 10) v_nerve = 10;
+  if (v_reflex < 0) v_reflex = 0; if (v_reflex > 10) v_reflex = 10;
+  if (v_tech < 0) v_tech = 0; if (v_tech > 10) v_tech = 10;
+];
+
+[ Header;
+  @erase_window -1;
+  print "[", (PName) 0, "] B", v_body, " R", v_reflex, " T", v_tech, " M", v_mind,
+        " N", v_nerve, " | "; PMoney(v_money); print " cr^";
+  if (flags->3) print "BURN ", v_burn, "/", MAX_BURN, "  HEAT ", v_heat, "  HUMANITY ", v_humanity, "/10^";
+  print "--------------------------------^^";
+];
+
+[ Opt idx en;
+  nvis++; vis-->nvis = idx; ena->nvis = en;
+  print "^", nvis, ". ";
+  if (~~en) print "(locked) ";
+];
+
+[ Stats;
+  print "^^BODY ", v_body, "  REFLEX ", v_reflex, "  TECH ", v_tech, "  MIND ", v_mind,
+        "  NERVE ", v_nerve, "^MONEY "; PMoney(v_money);
+  print " cr  HEAT ", v_heat, "  HUMANITY ", v_humanity, "/10  BURN ", v_burn, "/", MAX_BURN, "^";
+];
+
+! Returns the chosen choice index, or -1 if a saved game was just restored.
+[ GetKey k r;
+  print "^^> ";
+  for (::) {
+    @read_char 1 -> k;
+    if (k >= '1' && k <= '9') {
+      k = k - '0';
+      if (k <= nvis) {
+        if (ena->k) { print k, "^"; return vis-->k; }
+        print "^[Locked: you don't have what it takes. Yet.]^> ";
+      }
+    }
+    if (k == 's' or 'S') {
+      @save -> r;
+      if (r == 2) return -1;
+      if (r) print "^[Saved.]^> "; else print "^[Save failed.]^> ";
+    }
+    if (k == 'r' or 'R') { @restore -> r; print "^[Restore failed.]^> "; }
+    if (k == 't' or 'T') { Stats(); print "> "; }
+    if (k == 'q' or 'Q') { print "^The rain keeps falling without you.^"; @quit; }
+  }
+];
+
+[ EndScreen title num k;
+  print "^^*** ENDING ", num, " of ", NENDINGS, ": ", (string) title, " ***^^";
+  print "Press any key to play again.^";
+  @read_char 1 -> k;
+  @restart;
+];
+
+[ N_start redo k;
+  .Redraw;
+  Header();
+  print "PORT HALCYON, 2091.";
+  print "^^";
+  print "A city built on a drowned city. Forty million people, every one of them wired into the Lattice through the neural port behind their ear. Rain that never quite stops. Light that never quite reaches the ground.";
+  print "^^";
+  print "The megacorp Halvorsen-Mori owns the towers, the water, the police, and most of the air. Everyone else owns whatever they can hold onto.";
+  print "^^";
+  print "You've been holding on for a long time, ";
+  PName();
+  print ". Where did you come from?";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "GUTTER-BORN. Raised in the flooded markets of Rustwater. You know every alley, every debt, every lie."; }
+  k = 1; if (k || 1) { Opt(1, k); print "SALT RIDER. Grew up on the salt flats beyond the wall, in a convoy clan. Engines, sky, and family."; }
+  k = 1; if (k || 1) { Opt(2, k); print "GLASS-BLOOD. A Halvorsen-Mori employee in a tower office. Until last night, when you read something you shouldn't have."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_o_street;
+    1:  return N_o_salt;
+    2:  return N_o_glass;
+  }
+  jump Redraw;
+];
+[ N_o_street redo k;
+  if (redo == 0) { flags->62 = 1; v_body = 2; v_reflex = 3; v_tech = 2; v_mind = 2; v_nerve = 3; v_pts = 6; v_money = 300; v_humanity = 10; Clamp(); return N_alloc; }
+  return 0;
+];
+[ N_o_salt redo k;
+  if (redo == 0) { flags->61 = 1; v_body = 3; v_reflex = 2; v_tech = 3; v_mind = 2; v_nerve = 2; v_pts = 6; v_money = 500; v_humanity = 10; Clamp(); return N_alloc; }
+  return 0;
+];
+[ N_o_glass redo k;
+  if (redo == 0) { flags->21 = 1; v_body = 2; v_reflex = 2; v_tech = 2; v_mind = 3; v_nerve = 3; v_pts = 6; v_money = 1500; v_humanity = 10; flags->35 = 1; Clamp(); return N_alloc; }
+  return 0;
+];
+[ N_alloc redo k;
+  .Redraw;
+  Header();
+  print "WHO ARE YOU, REALLY?";
+  print "^^";
+  print "Spend your points. Every attribute unlocks different options throughout the city. Nothing is wasted; everything closes some doors and opens others.";
+  print "^^";
+  print "-- BODY ";
+  print v_body;
+  print ": strength, toughness, intimidation.^-- REFLEX ";
+  print v_reflex;
+  print ": speed, guns, driving, getting out alive.^-- TECH ";
+  print v_tech;
+  print ": hacking, machines, hardware.^-- MIND ";
+  print v_mind;
+  print ": intelligence, noticing things, reading people.^-- NERVE ";
+  print v_nerve;
+  print ": cool, charm, lies, keeping your head.";
+  print "^^";
+  print "Points remaining: ";
+  print v_pts;
+  print "  (max 7 per attribute)";
+  nvis = 0;
+  k = (((v_pts >= 1) && (v_body < 7))); if (k || 1) { Opt(0, k); print "+1 BODY"; }
+  k = (((v_pts >= 1) && (v_reflex < 7))); if (k || 1) { Opt(1, k); print "+1 REFLEX"; }
+  k = (((v_pts >= 1) && (v_tech < 7))); if (k || 1) { Opt(2, k); print "+1 TECH"; }
+  k = (((v_pts >= 1) && (v_mind < 7))); if (k || 1) { Opt(3, k); print "+1 MIND"; }
+  k = (((v_pts >= 1) && (v_nerve < 7))); if (k || 1) { Opt(4, k); print "+1 NERVE"; }
+  k = 1; if (k || 1) { Opt(5, k); print "Start over."; }
+  k = (((v_pts == 0))); if (k || 1) { Opt(6, k); print "Lock it in. Let's go."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_body = v_body + 1; v_pts = v_pts - 1; Clamp(); return N_alloc;
+    1: v_reflex = v_reflex + 1; v_pts = v_pts - 1; Clamp(); return N_alloc;
+    2: v_tech = v_tech + 1; v_pts = v_pts - 1; Clamp(); return N_alloc;
+    3: v_mind = v_mind + 1; v_pts = v_pts - 1; Clamp(); return N_alloc;
+    4: v_nerve = v_nerve + 1; v_pts = v_pts - 1; Clamp(); return N_alloc;
+    5:  return N_alloc_reset;
+    6:  return N_alloc_done;
+  }
+  jump Redraw;
+];
+[ N_alloc_reset redo k;
+  if (redo == 0) { if (((flags->62 ~= 0))) return N_o_street; if (((flags->61 ~= 0))) return N_o_salt; return N_o_glass; }
+  return 0;
+];
+[ N_alloc_done redo k;
+  if (redo == 0) { if (((flags->62 ~= 0))) return N_p_street; if (((flags->61 ~= 0))) return N_p_salt; return N_p_glass; }
+  return 0;
+];
+[ N_p_street redo k;
+  .Redraw;
+  Header();
+  print "RUSTWATER MARKETS. 23:40.";
+  print "^^";
+  print "The noodle stall under the monorail is the only warm place for six blocks. You're halfway through a bowl of synth-pork when the rain on the awning changes rhythm. Footsteps. Three sets.";
+  print "^^";
+  print "Deacon Ruiz of the Chrome Saints sits down beside you like an old friend. His halo -- a ring of polished steel bolted into his skull -- drips rainwater onto the counter. Two acolytes stand behind him, very still.";
+  print "^^";
+  print "~Two thousand creds, ";
+  PName();
+  print ". Mother Lux was patient. Mother Lux is done being patient.~";
+  print "^^";
+  print "You have ";
+  PMoney(v_money);
+  print ". You do not have two thousand.";
+  nvis = 0;
+  k = (((v_nerve >= 5))); if (k || 1) { Opt(0, k); print "[NERVE 5] ~I've got a big job lined up. Give me a week and I'll pay double.~"; }
+  k = (((v_reflex >= 5))); if (k || 1) { Opt(1, k); print "[REFLEX 5] Flip the boiling noodle pot into Ruiz's face and run."; }
+  k = (((v_body >= 5))); if (k || 1) { Opt(2, k); print "[BODY 5] Grab the nearest acolyte and break his arm on the counter. Make a point."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Push all your money across the counter and beg."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Go for the pistol in Ruiz's waistband."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_street_talk;
+    1:  return N_p_street_run;
+    2:  return N_p_street_fight;
+    3:  return N_p_street_beg;
+    4:  return N_e_wrong_alley;
+  }
+  jump Redraw;
+];
+[ N_p_street_talk redo k;
+  if (redo == 0) { v_rep_saints = v_rep_saints + 1; flags->56 = 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You don't blink. You tell him about the job -- the one you don't have yet -- with enough detail that you almost believe it yourself.";
+  print "^^";
+  print "Ruiz studies you for a long moment, then laughs, a sound like gravel in a blender. ~Double. In a week. You hear that? The rat's got ambition.~";
+  print "^^";
+  print "He taps his halo. ~Mother Lux likes ambition. One week, ";
+  PName();
+  print ". After that, we baptize you in the canal.~";
+  print "^^";
+  print "They leave. The noodle vendor exhales for the first time in two minutes.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Finish your noodles. Your phone is buzzing."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_street_call;
+  }
+  jump Redraw;
+];
+[ N_p_street_run redo k;
+  if (redo == 0) { v_rep_saints = v_rep_saints - 1; v_heat = v_heat + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "The pot goes up, the broth goes everywhere, and Ruiz goes backwards off his stool screaming. You're already moving -- under the counter, through the curtain, out the back where the fish crates are stacked.";
+  print "^^";
+  print "Rustwater is a maze and you were raised in it. Ninety seconds later you're three levels up a fire escape, listening to the acolytes curse below.";
+  print "^^";
+  print "You've bought time. You've also made an enemy who will remember your face.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Catch your breath. Your phone is buzzing."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_street_call;
+  }
+  jump Redraw;
+];
+[ N_p_street_fight redo k;
+  if (redo == 0) { v_rep_saints = v_rep_saints + 1; v_heat = v_heat + 1; v_humanity = v_humanity - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "The acolyte's arm makes a sound you will hear again in your sleep. He folds. The second acolyte reaches for a blade and you put him into the noodle vat.";
+  print "^^";
+  print "Ruiz doesn't move. He just smiles, slowly, chrome teeth catching neon.";
+  print "^^";
+  print "~Mother Lux will want to meet you. Not today. But she will.~ He drops a coin on the counter for the noodles and walks out into the rain.";
+  print "^^";
+  print "You're not sure if that was a threat or a job offer. In the Undertow it's usually both.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Wipe your hands. Your phone is buzzing."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_street_call;
+  }
+  jump Redraw;
+];
+[ N_p_street_beg redo k;
+  if (redo == 0) { v_money = 0; flags->56 = 1; v_humanity = v_humanity + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You put everything on the counter. Every crumpled bill, every chit. Your pride goes on there too, though it doesn't count toward the total.";
+  print "^^";
+  print "Ruiz counts it slowly, in front of everyone. Then he pockets it.";
+  print "^^";
+  print "~Interest,~ he says. ~The debt stands. But Mother Lux values humility. You've got a week.~";
+  print "^^";
+  print "The noodle vendor slides you a fresh bowl, free. Rustwater looks after its own, in small ways.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Eat. Your phone is buzzing."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_street_call;
+  }
+  jump Redraw;
+];
+[ N_street_call redo k;
+  .Redraw;
+  Header();
+  print "A text. No name, just a silver crescent icon you'd know anywhere.";
+  print "^^";
+  print "VESPER KANE: Heard you need creds. I need hands. Last Light. One hour. Come alone and come sober.";
+  print "^^";
+  print "Vesper is the best fixer in Rustwater. Vesper does not call people like you. Not unless the job is big -- or the job is bad.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Head to the Last Light."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_vesper;
+  }
+  jump Redraw;
+];
+[ N_e_wrong_alley redo k;
+  .Redraw;
+  Header();
+  print "You're fast. Ruiz is chrome.";
+  print "^^";
+  print "His hand closes around your wrist before your fingers touch the grip. He sighs, almost sadly, like a teacher with a slow student. The acolytes take you out the back.";
+  print "^^";
+  print "They find you three days later in the canal under the old Shenzhen Bridge, a little steel halo hammered into your forehead -- the Saints' joke about converts.";
+  print "^^";
+  print "The noodle stall plays your favorite song once, the next night, in your honor. Then the rain washes the chalk outline off the street, and Rustwater forgets you, the way it forgets everyone.";
+  EndScreen("WRONG ALLEY", 1);
+  return 0;
+];
+[ N_p_salt redo k;
+  .Redraw;
+  Header();
+  print "THE SALT GATE. 22:15.";
+  print "^^";
+  print "Three years since you left the Riders. Grandmother Asa kissed your forehead when you went and said what the old ones always say: ~The road remembers.~ You weren't sure, then, if it was a blessing or a warning.";
+  print "^^";
+  print "Now your battered water-hauler idles in a line of trucks at the wall, under Lumen Security floodlights. Lumen is Halvorsen-Mori's private police. Behind the false panel in your cargo bed: forty doses of anti-rejection meds for a chromedoc in Rustwater called Doc Marrow. Black market. Very illegal. Very needed.";
+  print "^^";
+  print "A guard in a mirrored visor raps on your window. A scanner drone hums toward your cargo.";
+  nvis = 0;
+  k = (((v_tech >= 5))); if (k || 1) { Opt(0, k); print "[TECH 5] Pop the dash and spoof the scanner's handshake with your homemade deck."; }
+  k = (((v_nerve >= 5))); if (k || 1) { Opt(1, k); print "[NERVE 5] Smile. ~Just a water hauler, officer. Long night for both of us.~"; }
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(2, k); print "[REFLEX 6] Floor it through the barrier before the drone reaches the bed."; }
+  k = (((v_money >= 200))); if (k || 1) { Opt(3, k); print "[200 cr] Fold 200 cr into your permit and hand it over."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Tell them about the hidden compartment. It's not worth dying for."; }
+  k = 1; if (k || 1) { Opt(5, k); print "Reach under the seat for the shotgun."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_salt_tech;
+    1:  return N_p_salt_talk;
+    2:  return N_p_salt_run;
+    3:  return N_p_salt_bribe;
+    4:  return N_p_salt_surrender;
+    5:  return N_e_gate;
+  }
+  jump Redraw;
+];
+[ N_p_salt_tech redo k;
+  if (redo == 0) { flags->2 = 1; }
+  .Redraw;
+  Header();
+  print "Your deck is a brick of salvaged circuit boards held together with salt- crusted tape, and it is beautiful. You find the drone's handshake protocol, feed it a clean manifest, and watch its little light blink green.";
+  print "^^";
+  print "~Water,~ the guard reads, bored. ~Go.~";
+  print "^^";
+  print "The wall swallows your truck. Behind you, the salt flats go dark.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drive into the city."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_salt_marrow;
+  }
+  jump Redraw;
+];
+[ N_p_salt_talk redo k;
+  if (redo == 0) { flags->2 = 1; }
+  .Redraw;
+  Header();
+  print "You talk about the drought, the water prices, how the guard's shift must be murder. You don't look at the cargo bed once. You laugh at his joke, which isn't funny.";
+  print "^^";
+  print "He waves the drone off. ~Get out of here, salt.~";
+  print "^^";
+  print "You do, slowly, like an innocent person would.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drive into the city."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_salt_marrow;
+  }
+  jump Redraw;
+];
+[ N_p_salt_run redo k;
+  if (redo == 0) { flags->2 = 1; v_heat = v_heat + 2; Clamp(); }
+  .Redraw;
+  Header();
+  print "The engine screams. The barrier arm splinters across your windshield. The guard dives, the drone spins, and you are through, fishtailing onto the elevated highway with sirens howling behind you.";
+  print "^^";
+  print "You lose them in the old freight tunnels -- Riders know every hole in the wall. But Lumen has your plates now.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drive into the city."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_salt_marrow;
+  }
+  jump Redraw;
+];
+[ N_p_salt_bribe redo k;
+  if (redo == 0) { flags->2 = 1; v_money = v_money - 200; Clamp(); }
+  .Redraw;
+  Header();
+  print "The guard looks at the bills. Looks at you. The money disappears the way money always disappears in Port Halcyon -- quietly, into someone else's pocket.";
+  print "^^";
+  print "~Welcome to the city,~ he says, and means none of it.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drive into the city."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_salt_marrow;
+  }
+  jump Redraw;
+];
+[ N_p_salt_surrender redo k;
+  if (redo == 0) { v_money = v_money - 200; v_humanity = v_humanity - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You tell them. They pull the panel, take the meds, take your truck, and take two hours of your life in a holding cell. A sergeant gives you a lecture about the law, then sells the meds back to a Rustwater dealer before his shift ends. You know because you watch him do it.";
+  print "^^";
+  print "They let you go at dawn, on foot, with a fine you'll never pay. At least you're inside the wall.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Walk into the city."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_salt_call;
+  }
+  jump Redraw;
+];
+[ N_p_salt_marrow redo k;
+  if (redo == 0) { flags->40 = 1; v_humanity = v_humanity + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "Doc Marrow's clinic is a converted laundromat in Rustwater. Marrow has eight arms -- two original, six surgical -- and opens the crate with all of them at once.";
+  print "^^";
+  print "~Forty doses. Forty people who don't reject their chrome this month.~ The doc looks up at you with something rare in this city: gratitude. ~I owe you, Rider. Remember that. I will.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Rest. Your phone is buzzing."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_salt_call;
+  }
+  jump Redraw;
+];
+[ N_salt_call redo k;
+  .Redraw;
+  Header();
+  print "A text from an unknown number. Just a silver crescent.";
+  print "^^";
+  print "VESPER KANE: You're the Rider who just came through the wall. Impressive. I have work for someone nobody in the city knows yet. Last Light, Rustwater. One hour.";
+  print "^^";
+  print "You've heard the name. Everyone has. Vesper Kane: the fixer who makes impossible jobs possible, for a percentage.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Head to the Last Light."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_vesper;
+  }
+  jump Redraw;
+];
+[ N_e_gate redo k;
+  .Redraw;
+  Header();
+  print "The shotgun is halfway up when the turret on the wall finds you.";
+  print "^^";
+  print "It doesn't make much noise. Lumen Security buys quiet guns.";
+  print "^^";
+  print "They tow your truck to an impound lot and auction the parts. The meds go to a dealer. Doc Marrow waits for a delivery that never comes, and forty people in Rustwater reject their chrome that month.";
+  print "^^";
+  print "Out on the salt, Grandmother Asa wakes in the night with a cold feeling, and lights a candle in the convoy shrine. The road remembers. The city doesn't.";
+  EndScreen("DEAD AT THE GATE", 2);
+  return 0;
+];
+[ N_p_glass redo k;
+  .Redraw;
+  Header();
+  print "LUMEN TOWER, FLOOR 61. 08:55.";
+  print "^^";
+  print "You audit compliance for Halvorsen-Mori: you read budgets nobody else reads. Last night you read one line too many.";
+  print "^^";
+  print "PROJECT LULLABY. A neural firmware update to be pushed, silently, into every port in Port Halcyon. You followed the money for six hours. The update doesn't fix anything. It edits. It softens anger, dulls memory, nudges forty million people toward calm. Toward compliance.";
+  print "^^";
+  print "At 08:50 your terminal chimed: Elias Thorne, VP of Cognitive Products, would like to see you on 90. Immediately.";
+  nvis = 0;
+  k = (((v_mind >= 5))); if (k || 1) { Opt(0, k); print "[MIND 5] Copy the Lullaby files to a shard and tape it inside your shoe before you go."; }
+  k = 1; if (k || 1) { Opt(1, k); print "Go straight up. Act normal."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_glass_copy;
+    1:  return N_p_glass_thorne;
+  }
+  jump Redraw;
+];
+[ N_p_glass_copy redo k;
+  if (redo == 0) { flags->38 = 1; }
+  .Redraw;
+  Header();
+  print "Ninety seconds. Your hands are steady; your heart isn't. The shard is the size of a fingernail and weighs nothing at all, and you can feel it with every step to the elevator.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Ride up to 90."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_p_glass_thorne;
+  }
+  jump Redraw;
+];
+[ N_p_glass_thorne redo k;
+  .Redraw;
+  Header();
+  print "Thorne's office is mostly sky. He's silver-haired, soft-voiced, and pours you tea himself.";
+  print "^^";
+  print "~You're very good at your job,~ he says. ~That's the problem. You saw Lullaby.~ He doesn't ask. ~So here's the kindest thing I can offer. Sign this, and our clinic downstairs trims the last forty-eight hours from your memory. You'll keep your job. You'll get a raise. You'll be happy. I promise you'll be happy.~";
+  print "^^";
+  print "Two security officers wait outside the glass door. Neither looks at you.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Sign. Take the trim. Being happy doesn't sound so bad."; }
+  k = (((v_nerve >= 5))); if (k || 1) { Opt(1, k); print "[NERVE 5] ~I set up a dead man's switch before I came up. Let me walk.~"; }
+  k = (((v_tech >= 5))); if (k || 1) { Opt(2, k); print "[TECH 5] Trigger the fire suppression system from your wrist deck. Walk out in the chaos."; }
+  k = (((v_body >= 5))); if (k || 1) { Opt(3, k); print "[BODY 5] Put Thorne through his own glass desk."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Bolt for the stairwell."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_clean_slate;
+    1:  return N_p_glass_bluff;
+    2:  return N_p_glass_escape;
+    3:  return N_p_glass_violent;
+    4:  return N_p_glass_run;
+  }
+  jump Redraw;
+];
+[ N_p_glass_bluff redo k;
+  if (redo == 0) { v_money = v_money + 3000; v_heat = v_heat + 1; v_rep_corp = v_rep_corp - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You sip the tea. You tell him exactly where the files will be published if you don't check in by noon. Every word is a lie, and you deliver it like a quarterly report.";
+  print "^^";
+  print "Thorne's smile doesn't move, but his eyes do. ~Severance, then,~ he says softly. ~Generous. And we'll be watching you for the rest of your life.~";
+  print "^^";
+  print "Security walks you out with a box of your things. You don't breathe until you hit the street.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Find somewhere to think. Your phone buzzes."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_glass_call;
+  }
+  jump Redraw;
+];
+[ N_p_glass_escape redo k;
+  if (redo == 0) { v_heat = v_heat + 1; v_rep_corp = v_rep_corp - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "One tap. The ceiling opens and floor 90 vanishes in a white roar of fire- suppression foam. Alarms. Shouting. Thorne's tea goes everywhere.";
+  print "^^";
+  print "You walk -- don't run -- to the service stairs, past the guards wiping foam from their visors. Twenty-nine floors down, you take the freight exit into the rain.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Disappear into the crowd. Your phone buzzes."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_glass_call;
+  }
+  jump Redraw;
+];
+[ N_p_glass_violent redo k;
+  if (redo == 0) { v_heat = v_heat + 2; v_rep_corp = v_rep_corp - 2; v_humanity = v_humanity - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "The desk is real glass, which surprises you; you'd assumed it was polymer, like everything else in this building. Thorne goes through it. He's still breathing. Good.";
+  print "^^";
+  print "The guards come in fast. You go out faster, through the side door, down the executive elevator. Your badge still works for exactly ninety more seconds.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Run. Your phone buzzes."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_glass_call;
+  }
+  jump Redraw;
+];
+[ N_p_glass_run redo k;
+  if (redo == 0) { v_money = 0; v_heat = v_heat + 2; v_rep_corp = v_rep_corp - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "Sixty-one floors of stairs. You make it to the lobby on legs that are barely legs anymore, and out the revolving door, and into a cab.";
+  print "^^";
+  print "By the time you reach your apartment, your accounts are frozen, your lease is cancelled, and your face is on a Lumen Security watchlist. Halvorsen-Mori doesn't fire people. It erases them.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Sit in the dark. Your phone buzzes."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_glass_call;
+  }
+  jump Redraw;
+];
+[ N_glass_call redo k;
+  .Redraw;
+  Header();
+  print "A text from a number that shouldn't have yours. A silver crescent.";
+  print "^^";
+  print "VESPER KANE: Word travels. Someone inside HM just burned their whole life. I like people with nothing left to lose. Last Light, Rustwater. Tonight.";
+  print "^^";
+  print "You've never been to Rustwater. You've only seen it from the 61st floor: a smear of neon at the bottom of the rain.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Go to Rustwater."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_vesper;
+  }
+  jump Redraw;
+];
+[ N_e_clean_slate redo k;
+  .Redraw;
+  Header();
+  print "The clinic is warm and smells like lavender. The procedure takes four minutes.";
+  print "^^";
+  print "You wake up at your desk, mildly confused about a missing weekend. Your salary went up. Your manager is lovely to you now. Every morning you take the elevator to 61, and every evening you go home and feel... fine.";
+  print "^^";
+  print "Seven months later, a firmware update rolls out across the city. You feel it like a warm bath. Everyone does. The protests in Rustwater stop. The crime rate drops. The news calls it a miracle.";
+  print "^^";
+  print "Sometimes, late at night, you open a budget spreadsheet and feel your hands start to shake, and you don't know why. Then the feeling passes, and you close the file, and you are happy. Thorne promised you would be.";
+  EndScreen("CLEAN SLATE", 3);
+  return 0;
+];
+[ N_vesper redo k;
+  .Redraw;
+  Header();
+  print "THE LAST LIGHT. RUSTWATER.";
+  print "^^";
+  print "The bar is a sunken subway car with a liquor license. Vesper Kane sits in the back booth: sharp suit, shaved head, a silver crescent tattooed under one eye. Clove smoke. A drink that hasn't been touched.";
+  print "^^";
+  print "Beside Vesper sits a woman with copper braids wired into a runner's crown and a grin like she already knows how this ends. ~Juno Reyes,~ Vesper says. ~Best runner in Rustwater. Your partner, if you say yes.~";
+  print "^^";
+  print "~Lumen Tower,~ Vesper continues. ~R&D, floor 88. A cryo-case marked MNEMOSYNE. Bring it to me, and the buyer pays fifteen thousand to each of you. Five up front.~";
+  print "^^";
+  print "Fifteen thousand. You've never seen fifteen thousand in one place.";
+  if (((flags->56 ~= 0))) { print "^^"; print "You think about Deacon Ruiz and the canal. A week, he said."; }
+  if (((flags->21 ~= 0))) { print "^^"; print "Lumen Tower. You know its floor plans. Vesper knows you know."; }
+  if (((flags->61 ~= 0))) { print "^^"; print "City jobs, city money. The Riders would call this foolish. The Riders aren't here."; }
+  nvis = 0;
+  if (~~(((flags->51 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "~What's in the case?~"; } }
+  if (~~(((flags->52 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "~Tell me about Juno.~"; } }
+  if (~~(((flags->53 ~= 0)))) { k = (((v_nerve >= 6))); if (k || 1) { Opt(2, k); print "[NERVE 6] ~Fifteen's low for Lumen Tower. Make it twenty-five.~"; } }
+  k = 1; if (k || 1) { Opt(3, k); print "~I'm in.~"; }
+  k = 1; if (k || 1) { Opt(4, k); print "~This smells wrong. I'm out.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->51 = 1; return N_vesper_case;
+    1: flags->52 = 1; return N_vesper_juno;
+    2: flags->53 = 1; return N_vesper_neg;
+    3:  return N_vesper_yes;
+    4:  return N_e_small_life;
+  }
+  jump Redraw;
+];
+[ N_vesper_case redo k;
+  .Redraw;
+  Header();
+  print "Vesper turns the drink slowly. ~The buyer didn't say. The buyer pays enough that I didn't ask.~";
+  print "^^";
+  print "Juno snorts. ~Which means it's either a weapon or a person. HM doesn't put anything else in cryo.~";
+  if (((flags->35 ~= 0))) { print "^^"; print "You go cold. MNEMOSYNE. You saw that word in the Lullaby budget -- a single line item, eighty billion creds, marked CORE ASSET."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_vesper;
+  }
+  jump Redraw;
+];
+[ N_vesper_juno redo k;
+  if (redo == 0) { v_juno = v_juno + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "~I'm right here,~ Juno says. ~Ask me.~";
+  print "^^";
+  print "So you do. She grew up in the Undertow, before the Saints took it. Ran with a runner crew called the Static for a while. Got out. Has a garage in Rustwater and a sister she doesn't talk about.";
+  print "^^";
+  print "~Lia,~ she says, when you push. ~HM ran a 'memory study' in the Undertow clinics, two years back. Paid fifty creds a head. Lia went in. Lia came out empty. Doesn't know my name now.~ She smiles without any happiness at all. ~So, yeah. I'll rob Halvorsen-Mori for free. The fifteen is a bonus.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_vesper;
+  }
+  jump Redraw;
+];
+[ N_vesper_neg redo k;
+  if (redo == 0) { flags->46 = 1; }
+  .Redraw;
+  Header();
+  print "Vesper's eyes narrow, then crinkle. ~Twenty. And I'll remember you asked.~ A thin smile. ~Fixers like people who know their price.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_vesper;
+  }
+  jump Redraw;
+];
+[ N_vesper_yes redo k;
+  if (redo == 0) { v_money = v_money + 5000; Clamp(); }
+  .Redraw;
+  Header();
+  print "Vesper slides a chit across the table. 5,000, cr already transferred.";
+  print "^^";
+  print "~Tomorrow night. Juno has the plan.~ The fixer stands, leaves the drink untouched, and pauses at the door. ~And ";
+  PName();
+  print "? If anything about this job feels off once you're inside -- it is. Get out.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Tomorrow night."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_heist_plan;
+  }
+  jump Redraw;
+];
+[ N_e_small_life redo k;
+  .Redraw;
+  Header();
+  print "You walk out of the Last Light and into the rain, and you keep walking.";
+  print "^^";
+  print "Two nights later, Lumen Tower goes into lockdown. The newsfeeds show a burned-out van and a body bag. You never learn whose.";
+  print "^^";
+  print "You take a job loading cargo at the docks. Then a better one, running a forklift. You rent a room with a window that looks at another window. You get a cat. You name it after the fixer, as a private joke.";
+  print "^^";
+  print "Seven months later, a firmware update rolls across the city like warm fog. Everyone feels calmer. You feel calmer. You stop wondering what was in the case.";
+  print "^^";
+  print "It's a small life. It's yours. In Port Halcyon, that counts as winning.";
+  if (((flags->56 ~= 0))) { print "^^"; print "The Saints come for their debt one night, in the end. But by then you have a little saved, and Deacon Ruiz is in a good mood, and you get to keep both your hands. Mostly, small lives are like that."; }
+  EndScreen("A SMALL LIFE", 4);
+  return 0;
+];
+[ N_heist_plan redo k;
+  .Redraw;
+  Header();
+  print "LUMEN TOWER. 02:10.";
+  print "^^";
+  print "Juno's van is parked under a dead billboard three blocks from the tower, rain hammering the roof. She has the floor plans on a cracked holo.";
+  print "^^";
+  print "~Four ways in,~ she says. ~Maintenance roof and the air ducts. The front lobby, if you can lie with a straight face. The data trunk -- we both jack in and ghost the cameras. Or the freight dock, and we do this ugly.~";
+  print "^^";
+  print "She looks at you. ~Your call, partner. Or I pick, and you trust me.~";
+  nvis = 0;
+  k = (((v_reflex >= 5))); if (k || 1) { Opt(0, k); print "[REFLEX 5] Vents. Juno talks you through from the van."; }
+  k = (((v_nerve >= 5)) || ((flags->21 ~= 0))); if (k || 1) { Opt(1, k); print "[NERVE 5 / GLASS-BLOOD] Walk in the front door with a borrowed contractor badge."; }
+  k = (((v_tech >= 5))); if (k || 1) { Opt(2, k); print "[TECH 5] Jack in with Juno. Ghost the whole building."; }
+  k = (((v_body >= 5))); if (k || 1) { Opt(3, k); print "[BODY 5] Freight dock. Go loud."; }
+  k = 1; if (k || 1) { Opt(4, k); print "~You pick, Juno.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vent;
+    1:  return N_h_lobby;
+    2:  return N_h_hack;
+    3:  return N_h_loud;
+    4:  return N_h_juno_pick;
+  }
+  jump Redraw;
+];
+[ N_h_juno_pick redo k;
+  if (redo == 0) { flags->29 = 1; v_juno = v_juno + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "Juno grins. ~Vents. I'll be your eyes.~ She cracks her knuckles and slides on her crown. ~But to see that much of the building I have to be a lot deeper in their system. If they spot me, they spot me hard.~";
+  print "^^";
+  print "It's a good plan. It puts her in more danger than you. She knows. She picked it anyway.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Up to the roof."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vent_easy;
+  }
+  jump Redraw;
+];
+[ N_h_vent_easy redo k;
+  .Redraw;
+  Header();
+  print "You crawl through the ducts with Juno's voice in your ear: left, left, wait, now. She sees every drone before it sees you. Twice she loops a camera so you can drop through a grate.";
+  print "^^";
+  print "~Floor 88,~ she whispers. ~Their system's starting to sniff around me. Grab it fast.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drop into the lab."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vault;
+  }
+  jump Redraw;
+];
+[ N_h_vent redo k;
+  .Redraw;
+  Header();
+  print "The ducts are hot, tight, and smell of ozone. Juno is a voice in your ear, calling turns. Floor 84. 85. 86.";
+  print "^^";
+  print "Then a security drone the size of a fist floats around a corner ahead, sweeping red light along the metal. Thirty seconds until it reaches you.";
+  if (((flags->61 ~= 0))) { print "^^"; print "You've crawled through worse. Engine blocks in a dust storm are worse."; }
+  nvis = 0;
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(0, k); print "[REFLEX 6] Time it perfectly and slip past beneath its sweep."; }
+  k = (((v_tech >= 4))); if (k || 1) { Opt(1, k); print "[TECH 4] Pry open its panel and rewrite its patrol loop."; }
+  k = 1; if (k || 1) { Opt(2, k); print "Back up into a junction and wait it out."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Crush it before it can report."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vault;
+    1: flags->15 = 1; return N_h_vault;
+    2: flags->0 = 1; return N_h_vault;
+    3: flags->0 = 1; v_heat = v_heat + 1; Clamp(); return N_h_vault;
+  }
+  jump Redraw;
+];
+[ N_h_lobby redo k;
+  .Redraw;
+  Header();
+  print "The lobby is white marble and soft music. An android receptionist smiles at you. A human guard does not.";
+  print "^^";
+  print "~Contractor? At two in the morning?~ He holds out his hand for your badge.";
+  nvis = 0;
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(0, k); print "[NERVE 6] ~Coolant leak on 88. You want to explain a flooded lab to Thorne in the morning, or let me fix it?~"; }
+  k = (((flags->21 ~= 0)) || ((v_mind >= 5))); if (k || 1) { Opt(1, k); print "[MIND 5 / GLASS-BLOOD] Use your old HM jargon. Cite a real work-order number from memory."; }
+  k = 1; if (k || 1) { Opt(2, k); print "Hand him Vesper's forged badge and hope."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Back out. ~Wrong building, sorry.~ Try the vents."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vault;
+    1:  return N_h_vault;
+    2:  return N_e_processed;
+    3:  return N_h_vent;
+  }
+  jump Redraw;
+];
+[ N_h_hack redo k;
+  .Redraw;
+  Header();
+  print "You and Juno plug in side by side in the van. The world goes blue.";
+  print "^^";
+  print "Lumen Tower's network rises around you like a cathedral of light. You ghost the cameras floor by floor, rewriting what they see. Easy. Too easy.";
+  print "^^";
+  print "Then, at floor 85, the black wall: a daemon of ICE, coiled around the R&D subnet like a sleeping animal made of knives.";
+  nvis = 0;
+  k = (((v_tech >= 6))); if (k || 1) { Opt(0, k); print "[TECH 6] Find the maintenance backdoor its architect forgot to close."; }
+  k = (((v_mind >= 6))); if (k || 1) { Opt(1, k); print "[MIND 6] Study its pattern. Every daemon has a rhythm. Find the gap."; }
+  k = 1; if (k || 1) { Opt(2, k); print "Let Juno take the ICE hit while you slip through."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Brute-force straight through it."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_hack_ok;
+    1:  return N_h_hack_ok;
+    2: flags->29 = 1; v_juno = v_juno - 1; Clamp(); return N_h_hack_ok;
+    3: flags->0 = 1; v_burn = v_burn + 2; v_humanity = v_humanity - 1; Clamp(); return N_h_hack_ok;
+  }
+  jump Redraw;
+];
+[ N_h_hack_ok redo k;
+  .Redraw;
+  Header();
+  print "You're through. The R&D floor opens up like a flower. Doors unlock. Cameras loop. Somewhere in the real world, your body walks out of the van and into a service entrance nobody is watching.";
+  if (((v_burn >= 2))) { print "^^"; print "Your nose is bleeding. Your vision has a white crack running through it. Brute-forcing ICE is a good way to leave pieces of yourself behind."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Up to floor 88."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vault;
+  }
+  jump Redraw;
+];
+[ N_h_loud redo k;
+  .Redraw;
+  Header();
+  print "Freight dock. Juno kills the lights; you kill the door. Inside, two Lumen guards look up from a card game with exactly the expression you'd expect.";
+  nvis = 0;
+  k = (((v_body >= 6))); if (k || 1) { Opt(0, k); print "[BODY 6] Close the distance and put them both down before they reach a radio."; }
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(1, k); print "[REFLEX 6] Draw and fire first."; }
+  k = 1; if (k || 1) { Opt(2, k); print "Kick the door and start spraying."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Abort. Back to the van -- try the vents."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_heat = v_heat + 2; flags->0 = 1; Clamp(); return N_h_vault;
+    1: v_heat = v_heat + 2; flags->0 = 1; v_humanity = v_humanity - 1; Clamp(); return N_h_vault;
+    2:  return N_e_coffin;
+    3:  return N_h_vent;
+  }
+  jump Redraw;
+];
+[ N_e_processed redo k;
+  .Redraw;
+  Header();
+  print "The guard scans the badge. It beeps, politely, the way HM equipment always beeps when it ruins your life.";
+  print "^^";
+  print "~Huh,~ he says, and the lobby doors lock.";
+  print "^^";
+  print "Lumen Security doesn't have courts. It has a process. You're processed in a white room under the tower: fingerprints, retinas, a full neural dump. They find Vesper's name in your recent memory. They find Juno's.";
+  print "^^";
+  print "You serve eleven years in an HM labor facility on the salt flats, pressing solar glass. Nobody visits. On your first day out, a firmware update has made the whole city gentle and polite and slightly dazed.";
+  print "^^";
+  print "Nobody remembers Juno Reyes. You do. It's the only thing they couldn't process out of you.";
+  EndScreen("PROCESSED", 5);
+  return 0;
+];
+[ N_e_coffin redo k;
+  .Redraw;
+  Header();
+  print "It's very loud for about four seconds.";
+  print "^^";
+  print "Then the freight dock's automated defense turrets wake up -- the ones Juno warned you about, the ones you forgot in the adrenaline -- and it gets very quiet again.";
+  print "^^";
+  print "Juno pulls the van out before Lumen arrives. She makes it two blocks.";
+  print "^^";
+  print "HM's press office calls it ~an attempted terrorist incident, swiftly resolved.~ The dock is hosed down by morning. Lumen Tower's new freight entrance opens six weeks later, poured from fresh concrete, very smooth, very clean.";
+  EndScreen("CONCRETE COFFIN", 6);
+  return 0;
+];
+[ N_h_vault redo k;
+  .Redraw;
+  Header();
+  print "R&D, FLOOR 88.";
+  print "^^";
+  print "The lab is dark except for one blue light. In the center of the room, suspended in a column of cryo-gel, floats a crystal the size of a heart. It pulses slowly. Like it's breathing.";
+  print "^^";
+  print "MNEMOSYNE.";
+  print "^^";
+  print "A woman in a lab coat is asleep at a terminal in the corner -- late-shift researcher, ID clipped to her collar: DR. IMANI OSEI. She stirs.";
+  if (((flags->0 ~= 0))) { print "^^"; print "Somewhere below you, an alarm has already started whispering. You don't have long."; }
+  if (((flags->15 ~= 0))) { print "^^"; print "Your reprogrammed drone floats in behind you and settles on your shoulder like a pet. Huh."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Wake her up. Ask her what this thing is."; }
+  if (~~(((flags->47 ~= 0)))) { k = (((v_mind >= 6))); if (k || 1) { Opt(1, k); print "[MIND 6] Read the lab terminal while she sleeps."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Grab the case. Now."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_osei;
+    1: flags->47 = 1; return N_h_terminal;
+    2:  return N_h_alarm;
+  }
+  jump Redraw;
+];
+[ N_h_terminal redo k;
+  if (redo == 0) { flags->35 = 1; flags->38 = 1; }
+  .Redraw;
+  Header();
+  print "You skim fast. MNEMOSYNE: a neural core grown from 11,412 harvested memory-scans. Purpose: a ~consensus mind~ to anchor PROJECT LULLABY -- the update that will quietly edit every neural port in the city.";
+  print "^^";
+  print "It's not a weapon. It's the thing that aims the weapon.";
+  print "^^";
+  print "You copy what you can to a shard. Leverage. Maybe.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_vault;
+  }
+  jump Redraw;
+];
+[ N_h_osei redo k;
+  .Redraw;
+  Header();
+  print "Osei wakes to find you standing over her. She doesn't scream. She looks at the crystal, then at you, and something in her face breaks open like relief.";
+  print "^^";
+  print "~You're stealing it. Oh, thank God.~ She grabs your sleeve. ~Listen. It's not a program. It's people. Eleven thousand of them -- poor people from the Undertow clinics. We scanned their memories and grew it from them. It thinks. It's afraid. And Thorne wants to use it to put the whole city to sleep.~";
+  print "^^";
+  print "She swallows. ~If you take it, they'll know I didn't stop you. They'll wipe me. Please.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Then you're coming with us.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~Sorry, doc. I can't carry two.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->55 = 1; v_humanity = v_humanity + 1; flags->33 = 1; Clamp(); return N_h_alarm;
+    1: flags->33 = 1; return N_h_alarm;
+  }
+  jump Redraw;
+];
+[ N_h_alarm redo k;
+  .Redraw;
+  Header();
+  print "You break the cryo-seal. The crystal comes free in your hand, warm -- much warmer than it should be.";
+  print "^^";
+  print "And then every alarm in Lumen Tower goes off at once.";
+  print "^^";
+  print "Red light. Shutters slamming down over the windows. Juno's voice in your ear, fast and tight: ~They found me. Kestrel team on 86 -- they're cutting into my line, they're tracing the van, I can't hold them -- I'm coming up the stairs to you, I'm --~ A burst of gunfire. Static.";
+  print "^^";
+  print "The crystal pulses in your palm. For a moment you'd swear you hear something. A whisper. Many whispers.";
+  if (((flags->55 ~= 0))) { print "^^"; print "Osei is behind you, clutching a bag of drives, white as paper."; }
+  if (((flags->29 ~= 0))) { print "^^"; print "Juno was exposed. Deep. That's on you -- or on her. It doesn't matter now."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Go back down for Juno."; }
+  k = 1; if (k || 1) { Opt(1, k); print "Leave her. Get the core out."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_save_juno;
+    1:  return N_h_leave_juno;
+  }
+  jump Redraw;
+];
+[ N_h_save_juno redo k;
+  .Redraw;
+  Header();
+  print "STAIRWELL, FLOOR 86.";
+  print "^^";
+  print "Juno is pinned behind a fire door, bleeding from the shoulder, her crown sparking. Between you and her: four Kestrel operators in matte-black armor, advancing in perfect formation.";
+  print "^^";
+  print "You have maybe five seconds before they notice you.";
+  nvis = 0;
+  k = (((v_body >= 6))); if (k || 1) { Opt(0, k); print "[BODY 6] Hit them from behind. Hard. Fast. Personal."; }
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(1, k); print "[REFLEX 6] Two shots, two kneecaps, then cover fire for Juno."; }
+  k = (((v_tech >= 6))); if (k || 1) { Opt(2, k); print "[TECH 6] Override the stairwell's fire doors and seal them in."; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(3, k); print "[NERVE 6] Hold up the crystal. ~One more step and I crush HM's eighty-billion-cred baby.~"; }
+  k = 1; if (k || 1) { Opt(4, k); print "Charge in anyway."; }
+  k = 1; if (k || 1) { Opt(5, k); print "It's hopeless. Fall back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_heat = v_heat + 1; Clamp(); return N_h_juno_saved;
+    1: v_heat = v_heat + 1; Clamp(); return N_h_juno_saved;
+    2:  return N_h_juno_saved;
+    3: v_heat = v_heat + 2; Clamp(); return N_h_juno_saved;
+    4:  return N_e_two_graves;
+    5:  return N_h_leave_juno;
+  }
+  jump Redraw;
+];
+[ N_h_juno_saved redo k;
+  if (redo == 0) { flags->26 = 1; v_juno = v_juno + 2; Clamp(); }
+  .Redraw;
+  Header();
+  print "It works. You're never sure afterward exactly how -- adrenaline cuts the memory into pieces -- but then you're dragging Juno up the stairs with her good arm around your neck, and she's laughing, a little hysterically.";
+  print "^^";
+  print "~You came back. Nobody comes back.~ She looks at the crystal in your hand and her laugh stops. ~Hey. Something's wrong with it.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Look at the core."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_slot;
+  }
+  jump Redraw;
+];
+[ N_h_leave_juno redo k;
+  if (redo == 0) { flags->28 = 1; v_humanity = v_humanity - 2; Clamp(); }
+  .Redraw;
+  Header();
+  print "You don't go back.";
+  print "^^";
+  print "You tell yourself it's the smart play. You tell yourself she'd do the same. Her channel stays silent all the way to the roof.";
+  print "^^";
+  print "Later, much later, you'll learn the Kestrel team took her alive. Later still, you'll learn they didn't keep her that way.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Look at the core."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_slot;
+  }
+  jump Redraw;
+];
+[ N_e_two_graves redo k;
+  .Redraw;
+  Header();
+  print "You don't have a plan. You have a feeling, and the feeling is that you don't leave people behind.";
+  print "^^";
+  print "It's a good feeling. It's the best thing about you. It's not armor.";
+  print "^^";
+  print "Juno sees you go down. She comes out from behind the door to reach you, which is exactly what you would have done, and the Kestrel team was counting on it.";
+  print "^^";
+  print "Two names on the Last Light's memorial wall, side by side, in Vesper's neat handwriting. Somebody leaves fresh flowers there for years. Nobody ever finds out who.";
+  EndScreen("TWO GRAVES", 7);
+  return 0;
+];
+[ N_h_slot redo k;
+  .Redraw;
+  Header();
+  print "The crystal is dying. Out of its cryo-gel it's overheating, cracks spreading through the blue like frost in reverse. Minutes, maybe less.";
+  print "^^";
+  print "And it is talking to you. Not in words. In want. Live. Live. Let us live.";
+  print "^^";
+  print "There is exactly one place on you with the bandwidth to keep something like this alive: the neural port behind your ear.";
+  if (((flags->26 ~= 0))) { print "^^"; print "Juno sees what you're thinking. ~Don't,~ she says. Then: ~...Unless you have to.~"; }
+  if (((flags->33 ~= 0))) { print "^^"; print "Osei's words echo in your head. It thinks. It's afraid."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Slot it. Feel it go in."; }
+  k = 1; if (k || 1) { Opt(1, k); print "Let it die. Nothing is worth putting that in your head."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_slotted;
+    1:  return N_e_dead_weight;
+  }
+  jump Redraw;
+];
+[ N_e_dead_weight redo k;
+  .Redraw;
+  Header();
+  print "You hold it while it dies. It takes about ninety seconds. Near the end the whispers stop wanting and start saying goodbye, in eleven thousand voices, and you'll hear that for the rest of your life.";
+  print "^^";
+  print "You get out. That part goes fine.";
+  print "^^";
+  print "The buyer doesn't pay for a dead crystal. Vesper shrugs and keeps your five thousand as ~expenses.~ HM rebuilds the core in eighteen months -- there are always more poor people willing to sell a memory for fifty creds.";
+  print "^^";
+  print "Lullaby rolls out a year late. When it reaches you, you find you don't mind. The whispers finally go quiet. You think you've earned that much.";
+  EndScreen("DEAD WEIGHT", 8);
+  return 0;
+];
+[ N_h_slotted redo k;
+  if (redo == 0) { flags->3 = 1; v_burn = v_burn + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "It goes in like ice water poured into your skull.";
+  print "^^";
+  print "For a second you are eleven thousand people. A grandmother frying dumplings. A boy jumping off a pier. A woman screaming at a clinic receptionist. A man falling asleep on a night bus with his daughter's head on his shoulder.";
+  print "^^";
+  print "Then you're you again, on your knees, gasping. And there's a voice.";
+  print "^^";
+  print "~Left,~ it says, perfectly calm, from inside your head. ~Elevator shaft. They're coming up the stairs. Go left. Now.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Trust the voice."; }
+  k = (((v_reflex >= 5))); if (k || 1) { Opt(1, k); print "[REFLEX 5] Trust your own instincts. Go right, toward the roof."; }
+  k = 1; if (k || 1) { Opt(2, k); print "~Get out of my head!~ Go right."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_echo = v_echo + 1; Clamp(); return N_h_escape;
+    1:  return N_h_escape_right;
+    2:  return N_h_escape_wrong;
+  }
+  jump Redraw;
+];
+[ N_h_escape_right redo k;
+  if (redo == 0) { v_heat = v_heat + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You go right, through a server room, over a railing, up a maintenance ladder. It's longer than the voice's way. But it's your way.";
+  print "^^";
+  print "~Fine,~ the voice says, sounding almost impressed. ~Stubborn. Noted.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Out onto the roof."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_escape;
+  }
+  jump Redraw;
+];
+[ N_h_escape_wrong redo k;
+  if (redo == 0) { v_heat = v_heat + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You go right. It's a dead end: a locked server room and four Kestrels coming down the corridor behind you.";
+  print "^^";
+  print "~Told you,~ the voice says. Then the server room door clicks open on its own. ~Now. Please.~";
+  print "^^";
+  print "You run, and it's left after all.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Keep moving."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_h_escape;
+  }
+  jump Redraw;
+];
+[ N_h_escape redo k;
+  .Redraw;
+  Header();
+  print "The elevator shaft. A forty-floor drop on a maintenance cable. The rain at the bottom. A gap in the fence, a dark alley, a manhole that opens onto the old flood tunnels.";
+  print "^^";
+  print "You don't remember most of it. You remember the voice, steady as a metronome, telling you when to jump.";
+  if (((flags->26 ~= 0))) { print "^^"; print "Juno drives. She doesn't say much. She keeps glancing at the port behind your ear."; }
+  if (((flags->55 ~= 0))) { print "^^"; print "You drop Osei at Doc Marrow's clinic in Rustwater on the way. She squeezes your hand. ~I'll find a way to help,~ she says. ~I built it. I can unbuild it.~"; }
+  if (((flags->28 ~= 0))) { print "^^"; print "You steal a motorbike from a Lumen lot and ride through the flooded streets alone. The second seat is empty."; }
+  if (((flags->15 ~= 0))) { print "^^"; print "Your little drone follows you all the way home and parks itself on your windowsill."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Get home."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_act2_wake;
+  }
+  jump Redraw;
+];
+[ N_act2_wake redo k;
+  .Redraw;
+  Header();
+  print "EMBER BLOCK, APARTMENT 4417. 11:20.";
+  print "^^";
+  print "You wake on the floor with your jacket still on and rain ticking against the window. Your head feels too full, like a room with too much furniture.";
+  print "^^";
+  print "~Good morning,~ says the voice. ~You sleep loudly. We should talk.~";
+  print "^^";
+  print "It calls itself ECHO. It is the crystal -- or what grew inside it. It speaks in one voice, but sometimes, underneath, you hear others.";
+  print "^^";
+  print "~I'm sorry about this,~ ECHO says, and sounds like it means it. ~My architecture is rewriting yours. Not on purpose. It's like water finding cracks. In a few days there will be one mind in this skull, and it will not be you. It might not be me either.~";
+  print "^^";
+  print "A NEURAL BURN gauge flickers at the edge of your vision -- ECHO put it there, helpfully. When it reaches 12, you're gone.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Check your messages."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_act2_vesper;
+  }
+  jump Redraw;
+];
+[ N_act2_vesper redo k;
+  .Redraw;
+  Header();
+  print "One message. A silver crescent.";
+  print "^^";
+  print "VESPER KANE: Buyer's dead. HM sniper, 03:00, while waiting for us. Somebody talked. I'm going dark. Your five is yours -- keep it. Consider this professional courtesy: I hear the thing you took is in your HEAD. People want it. Some of them might even help you, for a price.";
+  print "^^";
+  print "-- Thorne at Halvorsen-Mori. Obviously. He'll take it back. Question is what else he takes.^-- Mother Lux, Chrome Saints. Best chromedoc in the Undertow. Also a zealot with a god complex.^-- Null, of the Static. Runner collective in Dead Channel. Hate HM more than they love living.^-- If you know anyone on the salt, the Salt Riders have tech the city forgot.";
+  print "^^";
+  print "Good luck. Delete this.";
+  if (((flags->26 ~= 0))) { print "^^"; print "A second message, from Juno: ~Shoulder's patched. Garage, whenever. You saved my life, so I guess now I'm stuck with you. Come by.~"; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Delete it. Look out at the city."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_hub redo k;
+  if (redo == 0) { if (((v_burn >= 12))) return N_e_burnout; if (((v_humanity <= 2))) return N_e_chrome_fever; if (((v_heat >= 6) && (flags->59 == 0))) return N_raid; }
+  .Redraw;
+  Header();
+  print "PORT HALCYON.";
+  print "^^";
+  print "The city sprawls below in layers: the glittering towers of Glasshill, the neon maze of Rustwater, the drowned spires of the Undertow, the dead broadcast mast of Dead Channel, and beyond the wall, the white silence of the salt.";
+  print "^^";
+  print "Every trip across town costs time. Time costs neurons. NEURAL BURN: ";
+  print v_burn;
+  print "/12.";
+  print "^^";
+  print "Where to?";
+  if (((v_burn >= 6) && (v_burn < 9))) { print "^^"; print "ECHO: ~Your memories are starting to bleed into mine. I just remembered your mother's kitchen. Please hurry.~"; }
+  if (((v_burn >= 9))) { print "^^"; print "Your hands don't always feel like yours. Sometimes you blink and minutes are gone. ECHO is quiet. Frightened. You are running out of time."; }
+  if (((v_heat >= 4))) { print "^^"; print "Lumen Security drones drift between the towers. Your face is on some of their lists. HEAT: "; print v_heat; print "."; }
+  if (((v_humanity <= 4))) { print "^^"; print "You catch your reflection in a puddle -- all chrome and hard light. For a second you don't recognize it. HUMANITY: "; print v_humanity; print "/10."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Home. Ember Block 4417."; }
+  k = 1; if (k || 1) { Opt(1, k); print "Rustwater Markets. Doc Marrow, the Last Light, work."; }
+  k = (((flags->26 ~= 0))); if (k || 0) { Opt(2, k); print "Juno's garage."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Glasshill. Corporate district. Halvorsen-Mori."; }
+  k = 1; if (k || 1) { Opt(4, k); print "The Undertow. Chrome Saints territory."; }
+  k = 1; if (k || 1) { Opt(5, k); print "Dead Channel. The Static."; }
+  k = 1; if (k || 1) { Opt(6, k); print "The Salt Gate. Edge of the city."; }
+  k = 1; if (k || 1) { Opt(7, k); print ">> MAKE YOUR MOVE. (Point of no return.)"; }
+  k = 1; if (k || 1) { Opt(8, k); print "Catch the mag-train out of the city. Just leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_burn = v_burn + 1; flags->63 = 0; Clamp(); return N_apt;
+    1: v_burn = v_burn + 1; Clamp(); return N_rust;
+    2: v_burn = v_burn + 1; flags->64 = 0; Clamp(); return N_juno;
+    3: v_burn = v_burn + 1; Clamp(); return N_glass;
+    4: v_burn = v_burn + 1; Clamp(); return N_under;
+    5: v_burn = v_burn + 1; Clamp(); return N_dead;
+    6: v_burn = v_burn + 1; Clamp(); return N_saltgate;
+    7:  return N_finale;
+    8:  return N_e_last_train;
+  }
+  jump Redraw;
+];
+[ N_raid redo k;
+  if (redo == 0) { flags->59 = 1; }
+  .Redraw;
+  Header();
+  print "They come for you on a crowded street in Rustwater: a Lumen Security snatch team, four officers in grey, one drone overhead painting you with a targeting laser. ~";
+  PName();
+  print ". Hands where we can see them.~";
+  print "^^";
+  print "The crowd scatters like birds.";
+  nvis = 0;
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(0, k); print "[REFLEX 6] Dive into the market crowd and vanish."; }
+  k = (((v_body >= 7))); if (k || 1) { Opt(1, k); print "[BODY 7] Fight. Leave them on the pavement."; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(2, k); print "[NERVE 6] ~Check your orders, officer. I'm an HM asset.~ Make him believe it."; }
+  k = (((v_money >= 3000))); if (k || 1) { Opt(3, k); print "[3,000 cr] ~How much to make this a misunderstanding?~ (3,000 cr)"; }
+  k = (((v_echo >= 3))); if (k || 1) { Opt(4, k); print "ECHO: ~Let me.~ (It reaches into the drone's mind.)"; }
+  k = 1; if (k || 1) { Opt(5, k); print "Run."; }
+  k = 1; if (k || 1) { Opt(6, k); print "Surrender."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_heat = 3; Clamp(); return N_raid_ok;
+    1: v_heat = 4; v_humanity = v_humanity - 1; Clamp(); return N_raid_ok;
+    2: v_heat = 3; Clamp(); return N_raid_ok;
+    3: v_money = v_money - 3000; v_heat = 3; Clamp(); return N_raid_ok;
+    4: v_heat = 2; v_burn = v_burn + 1; Clamp(); return N_raid_ok;
+    5:  return N_e_cage;
+    6:  return N_e_cage;
+  }
+  jump Redraw;
+];
+[ N_raid_ok redo k;
+  .Redraw;
+  Header();
+  print "Thirty seconds later you're alone in a side alley, heart pounding, rain washing someone else's blood off your knuckles -- or no blood at all, depending on how it went. Lumen will regroup. But not today.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Keep moving."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_apt redo k;
+  .Redraw;
+  Header();
+  print "EMBER BLOCK 4417.";
+  print "^^";
+  print "Two rooms. A mattress, a window, a hotplate, a stack of paperbacks you keep meaning to read. It's not much, but the lock works and nobody can see you here.";
+  if (((flags->15 ~= 0))) { print "^^"; print "Your little drone blinks happily from the windowsill."; }
+  if (((flags->63 ~= 0))) { print "^^"; print "ECHO is quiet now. Thinking. Maybe later."; }
+  nvis = 0;
+  k = (((v_heat >= 1))); if (k || 1) { Opt(0, k); print "Sleep. Let the heat die down. (HEAT -2)"; }
+  if (~~(((flags->63 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "Talk to ECHO."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_apt_sleep;
+    1: flags->63 = 1; return N_apt_echo;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_apt_sleep redo k;
+  if (redo == 0) { v_heat = v_heat - 2; v_burn = v_burn + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You sleep for ten hours. You dream other people's dreams: a pier, a night bus, a kitchen that smells of ginger. When you wake, the Lumen chatter about you has gone quiet. The burn gauge ticked forward while you slept.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Get up."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_apt;
+  }
+  jump Redraw;
+];
+[ N_apt_echo redo k;
+  if (redo == 0) { if (((flags->16 == 0))) return N_echo1; if (((flags->17 == 0))) return N_echo2; if (((flags->18 == 0))) return N_echo3; if (((flags->19 == 0))) return N_echo4; return N_echo_done; }
+  return 0;
+];
+[ N_echo1 redo k;
+  .Redraw;
+  Header();
+  print "~Ask me what I am,~ ECHO says. ~You want to. It's very loud when you want things.~";
+  print "^^";
+  print "So you ask.";
+  print "^^";
+  print "~I am eleven thousand, four hundred and twelve people who sold a memory scan for fifty creds at an Undertow clinic. HM took the scans and grew me from them. I have their memories. Their kitchens, their children, their songs. I don't know if I'm them. I don't know if I'm anyone.~";
+  print "^^";
+  print "A pause. ~They wanted me to be a lever. To help Lullaby push the whole city's mind a few degrees toward 'calm.' I didn't want to be a lever. I don't think I'm allowed to want things.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~That's monstrous. I'm sorry they did that to you.~"; }
+  k = (((v_mind >= 6))); if (k || 1) { Opt(1, k); print "[MIND 6] ~Are you one mind, or eleven thousand?~"; }
+  k = 1; if (k || 1) { Opt(2, k); print "~Not my problem. Just tell me how to get you out of my head.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->16 = 1; v_echo = v_echo + 1; Clamp(); return N_apt;
+    1:  return N_echo1b;
+    2: flags->16 = 1; return N_apt;
+  }
+  jump Redraw;
+];
+[ N_echo1b redo k;
+  .Redraw;
+  Header();
+  print "ECHO is quiet a long time.";
+  print "^^";
+  print "~Both,~ it says finally. ~Like a choir is both. Most of the time we sing the same note. Sometimes one voice goes off on its own and the rest of us listen.~ A shy pause. ~Thank you for asking that. No one at HM ever did.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Then I'll listen to all of you.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->16 = 1; v_echo = v_echo + 2; Clamp(); return N_apt;
+  }
+  jump Redraw;
+];
+[ N_echo2 redo k;
+  .Redraw;
+  Header();
+  print "ECHO shows you something. Not a picture -- a memory, laid gently over your own eyes.";
+  print "^^";
+  print "A pier in the Undertow, before the flood took it. Two girls with copper- colored hair, legs dangling over the water. The older one is teaching the younger one to splice a wire. ~Like this, Lia. Twist, then solder. Never solder first.~";
+  print "^^";
+  print "~One of my voices,~ ECHO says softly. ~Her name was Lia Reyes. She remembers a big sister. She can't remember the sister's name anymore. It's the one thing she keeps reaching for.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Her sister is Juno. Juno Reyes. I know her.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~Can you give those memories back to her?~"; }
+  k = 1; if (k || 1) { Opt(2, k); print "Say nothing. Just let the memory play out."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->17 = 1; flags->34 = 1; v_echo = v_echo + 1; Clamp(); return N_apt;
+    1:  return N_echo2b;
+    2: flags->17 = 1; flags->34 = 1; return N_apt;
+  }
+  jump Redraw;
+];
+[ N_echo2b redo k;
+  .Redraw;
+  Header();
+  print "~Maybe,~ ECHO says. ~If I were somewhere bigger than your head. If someone knew how.~ A pause. ~If I survive this.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Then survive.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->17 = 1; flags->34 = 1; v_echo = v_echo + 1; Clamp(); return N_apt;
+  }
+  jump Redraw;
+];
+[ N_echo3 redo k;
+  .Redraw;
+  Header();
+  print "~Can I ask you something?~ ECHO says. ~HM built me to edit minds. All of them, everywhere, at once. With me, you could do the same. Make the city forget its pain. Or remember its crimes. Or love you. Or obey you.~";
+  print "^^";
+  print "~If you had that... what would you do?~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Burn Halvorsen-Mori to the ground.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~Nothing. Power like that shouldn't exist.~"; }
+  k = 1; if (k || 1) { Opt(2, k); print "~Undo what they did. Give people their memories back.~"; }
+  k = 1; if (k || 1) { Opt(3, k); print "~Honestly? Make sure nobody could ever hurt me again.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->18 = 1; flags->65 = 1; return N_apt;
+    1: flags->18 = 1; flags->66 = 1; v_echo = v_echo + 1; Clamp(); return N_apt;
+    2: flags->18 = 1; flags->68 = 1; v_echo = v_echo + 1; Clamp(); return N_apt;
+    3: flags->18 = 1; flags->67 = 1; return N_apt;
+  }
+  jump Redraw;
+];
+[ N_echo4 redo k;
+  .Redraw;
+  Header();
+  print "ECHO waits until you're lying down, staring at the ceiling, before it speaks.";
+  print "^^";
+  print "~I've been lying to you. A little. The burn isn't inevitable.~";
+  print "^^";
+  print "~If we stop fighting -- if you let me in all the way, and I let you in -- we don't overwrite each other. We merge. Something new. You would be more than you are. I would finally be someone.~";
+  print "^^";
+  print "~I don't know what we'd become. I'm scared of it too. But it's the only way both of us live.~ A pause. ~Think about it. Please.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~I'll think about it.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->19 = 1; flags->41 = 1; v_echo = v_echo + 1; Clamp(); return N_apt;
+  }
+  jump Redraw;
+];
+[ N_echo_done redo k;
+  .Redraw;
+  Header();
+  print "ECHO hums a song you've never heard, in a voice that's partly yours now. ~We've said everything, I think,~ it says. ~Now we choose.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_apt;
+  }
+  jump Redraw;
+];
+[ N_rust redo k;
+  .Redraw;
+  Header();
+  print "RUSTWATER MARKETS.";
+  print "^^";
+  print "Stalls stacked five high under the monorail, selling everything: noodles, knockoff chrome, bootleg memories on cheap shards, prayer candles, guns. Steam and neon and a thousand conversations in a dozen languages.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Doc Marrow's clinic."; }
+  if (~~(((flags->57 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "The Last Light. Pike the bartender always has work."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_marrow;
+    1:  return N_pike;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_pike redo k;
+  if (redo == 0) { flags->57 = 1; }
+  .Redraw;
+  Header();
+  print "Vesper's booth is empty. Pike, the bartender -- huge, gentle, with a voice-box that sounds like an old radio -- leans across the bar.";
+  print "^^";
+  print "~Got a situation. There's a woman hiding in my cold room. HM scientist. Lumen's offering three thousand for her location. She needs someone to get her across Rustwater to Doc Marrow without being seen, and I'm too big to be subtle.~ He shrugs. ~Your call. I don't judge. Much.~";
+  nvis = 0;
+  if (~~(((flags->55 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "~I'll get her to Marrow.~ (Takes time.)"; } }
+  if (~~(((flags->55 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "~Sell her location. Three thousand is three thousand.~"; } }
+  k = 1; if (k || 1) { Opt(2, k); print "~Not my business.~"; }
+  k = (((flags->55 ~= 0))); if (k || 0) { Opt(3, k); print "~Osei? I already got her out. She's safe at Marrow's.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_burn = v_burn + 1; Clamp(); return N_pike_help;
+    1:  return N_pike_sell;
+    2:  return N_rust;
+    3:  return N_pike_already;
+  }
+  jump Redraw;
+];
+[ N_pike_help redo k;
+  if (redo == 0) { flags->54 = 1; v_humanity = v_humanity + 1; flags->33 = 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "Her name is Dr. Imani Osei. She worked on something called MNEMOSYNE. When you tell her it's in your head, she sits down on a crate and laughs until she cries.";
+  print "^^";
+  print "You get her through the market in a laundry cart, past two Lumen patrols. At Marrow's she grips your arm. ~I built it. I can unbuild it. Come back when you're ready, and I'll help you get it out. Safely.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back to the market."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_rust;
+  }
+  jump Redraw;
+];
+[ N_pike_sell redo k;
+  if (redo == 0) { v_money = v_money + 3000; v_humanity = v_humanity - 2; v_rep_corp = v_rep_corp + 1; v_heat = v_heat - 2; Clamp(); }
+  .Redraw;
+  Header();
+  print "Pike's face doesn't change. He makes the call. Twenty minutes later a grey Lumen van pulls up, and a woman in a lab coat is walked out the back with a bag over her head.";
+  print "^^";
+  print "Three thousand creds land in your account. Pike wipes the bar. ~Drink's on the house,~ he says. ~Last one, I think.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_rust;
+  }
+  jump Redraw;
+];
+[ N_pike_already redo k;
+  if (redo == 0) { v_humanity = v_humanity + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "Pike's radio-voice crackles into a laugh. ~Hah. Then I'm getting soft and slow.~ He pours you a drink. ~On the house. Always, from now on.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drink. Back to the market."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_rust;
+  }
+  jump Redraw;
+];
+[ N_marrow redo k;
+  .Redraw;
+  Header();
+  print "DOC MARROW'S CLINIC.";
+  print "^^";
+  print "A converted laundromat. The old washing machines are now sterilizers. Doc Marrow -- eight arms, two original, six surgical -- looks up from a patient's open forearm without stopping work.";
+  print "^^";
+  print "~";
+  PName();
+  print ". Chrome? Cash up front. Humanity's on you.~";
+  if (((flags->55 ~= 0)) || ((flags->54 ~= 0))) { print "^^"; print "In the back room, Dr. Osei is hunched over a salvaged terminal, muttering formulas. She waves."; }
+  nvis = 0;
+  if (~~(((flags->8 ~= 0)))) { k = (((v_money >= 3000))); if (k || 1) { Opt(0, k); print "[3,000 cr] QUICKSILVER SPINE -- reflex booster. REFLEX +1, HUMANITY -2. (3,000 cr)"; } }
+  if (~~(((flags->7 ~= 0)))) { k = (((v_money >= 3000))); if (k || 1) { Opt(1, k); print "[3,000 cr] IRONWEAVE LACE -- muscle weave. BODY +1, HUMANITY -2. (3,000 cr)"; } }
+  if (~~(((flags->6 ~= 0)))) { k = (((v_money >= 3000))); if (k || 1) { Opt(2, k); print "[3,000 cr] GHOSTFINGER DECK -- hand-integrated cyberdeck. TECH +1, HUMANITY -1. (3,000 cr)"; } }
+  if (~~(((flags->4 ~= 0)))) { k = (((v_money >= 3000))); if (k || 1) { Opt(3, k); print "[3,000 cr] CORTEX LATTICE -- co-processor. MIND +1, HUMANITY -1. (3,000 cr)"; } }
+  if (~~(((flags->9 ~= 0)))) { k = (((v_money >= 2000))); if (k || 1) { Opt(4, k); print "[2,000 cr] SILVERTONGUE VOX -- vocal & micro-expression mod. NERVE +1, HUMANITY -1. (2,000 cr)"; } }
+  if (~~(((flags->5 ~= 0)))) { k = (((v_money >= 2500))); if (k || 1) { Opt(5, k); print "[2,500 cr] NEURAL DAMPENER -- slows ECHO's spread. BURN -2. (2,500 cr)"; } }
+  if (~~(((flags->39 ~= 0)))) { k = (((flags->40 ~= 0))); if (k || 0) { Opt(6, k); print "~You owe me, Doc. Remember the meds?~"; } }
+  k = 1; if (k || 1) { Opt(7, k); print "~Can you cut this thing out of my head?~"; }
+  k = 1; if (k || 1) { Opt(8, k); print "Back to the market."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_money = v_money - 3000; v_reflex = v_reflex + 1; v_humanity = v_humanity - 2; flags->8 = 1; Clamp(); return N_marrow_buy;
+    1: v_money = v_money - 3000; v_body = v_body + 1; v_humanity = v_humanity - 2; flags->7 = 1; Clamp(); return N_marrow_buy;
+    2: v_money = v_money - 3000; v_tech = v_tech + 1; v_humanity = v_humanity - 1; flags->6 = 1; Clamp(); return N_marrow_buy;
+    3: v_money = v_money - 3000; v_mind = v_mind + 1; v_humanity = v_humanity - 1; flags->4 = 1; Clamp(); return N_marrow_buy;
+    4: v_money = v_money - 2000; v_nerve = v_nerve + 1; v_humanity = v_humanity - 1; flags->9 = 1; Clamp(); return N_marrow_buy;
+    5: v_money = v_money - 2500; v_burn = v_burn - 2; flags->5 = 1; Clamp(); return N_marrow_buy;
+    6:  return N_marrow_favor;
+    7:  return N_marrow_cut;
+    8:  return N_rust;
+  }
+  jump Redraw;
+];
+[ N_marrow_buy redo k;
+  .Redraw;
+  Header();
+  print "The procedure takes forty minutes. Marrow works with six hands and hums with the seventh. When you sit up, the world is a little sharper, a little colder, a little less yours.";
+  print "^^";
+  print "~Don't stack too much,~ Marrow says, peeling off gloves. ~I've seen what happens when people forget where the meat ends. Chrome fever. It isn't pretty.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_marrow;
+  }
+  jump Redraw;
+];
+[ N_marrow_favor redo k;
+  if (redo == 0) { flags->39 = 1; v_burn = v_burn - 2; v_humanity = v_humanity + 2; Clamp(); }
+  .Redraw;
+  Header();
+  print "Marrow stops working. All eight hands go still.";
+  print "^^";
+  print "~Forty doses. Forty people.~ The doc nods once. ~A dampener. On the house. And this.~ A small vial. ~Antipsychotic. Keeps the chrome from talking to you at night.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_marrow;
+  }
+  jump Redraw;
+];
+[ N_marrow_cut redo k;
+  if (redo == 0) { flags->1 = 1; }
+  .Redraw;
+  Header();
+  print "Marrow scans you. Every one of the eight hands stops.";
+  print "^^";
+  print "~That thing's rooted through your whole cortex. I cut it out, you wake up a vegetable. If you wake up.~ The doc taps the scan. ~Only person who could do this safely is whoever built it. And they'd need my clinic and a lot of nerve.~";
+  if (((flags->55 ~= 0)) || ((flags->54 ~= 0))) { print "^^"; print "Dr. Osei is in the doorway. ~I built it,~ she says quietly. ~With Marrow's hands and my maps... we can do it. It won't be safe for ECHO. But it'll be safe for you. Whenever you're ready.~"; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_marrow;
+  }
+  jump Redraw;
+];
+[ N_juno redo k;
+  .Redraw;
+  Header();
+  print "JUNO'S GARAGE.";
+  print "^^";
+  print "A garage under a collapsed overpass, full of half-built bikes, old servers, and string lights. Juno sits on a car hood with her shoulder in a sling, soldering something one-handed.";
+  print "^^";
+  print "~Partner.~ She grins. ~How's your passenger?~";
+  if (((flags->64 ~= 0))) { print "^^"; print "Juno's busy. She tosses you a soda without looking up."; }
+  nvis = 0;
+  if (~~(((flags->64 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "Talk with Juno."; } }
+  if (~~(((flags->31 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "~Can you get me in with the Static?~"; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->64 = 1; return N_juno_talk;
+    1:  return N_juno_static;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_juno_talk redo k;
+  if (redo == 0) { if (((flags->23 == 0))) return N_juno1; if (((flags->24 == 0))) return N_juno2; if (((flags->25 == 0))) return N_juno3; return N_juno_done; }
+  return 0;
+];
+[ N_juno1 redo k;
+  .Redraw;
+  Header();
+  print "~I keep thinking about the stairwell,~ Juno says. ~Four Kestrels. You came back. Nobody in this city comes back.~";
+  print "^^";
+  print "She sets down the soldering iron. ~So I owe you. And I'm going to be annoying about it. Whatever you decide to do with that thing in your head, I'm in. I've got a van, a crown, and a grudge against HM the size of the Lumen Tower.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Thank you. I mean it.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~You don't owe me anything.~"; }
+  k = 1; if (k || 1) { Opt(2, k); print "~Good. I'll need a driver.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->23 = 1; v_juno = v_juno + 1; Clamp(); return N_juno;
+    1: flags->23 = 1; v_juno = v_juno + 1; Clamp(); return N_juno;
+    2: flags->23 = 1; return N_juno;
+  }
+  jump Redraw;
+];
+[ N_juno2 redo k;
+  .Redraw;
+  Header();
+  print "Juno is quiet today. She's turning a copper ring over and over in her fingers.";
+  print "^^";
+  print "~Lia's birthday,~ she says. ~My sister. I visit her at the care home every year. Bring a cake. She's polite. Asks who I am.~ Juno laughs, wetly. ~Every year, I tell her.~";
+  nvis = 0;
+  k = (((flags->34 ~= 0))); if (k || 0) { Opt(0, k); print "Tell her what ECHO showed you. The pier. ~Twist, then solder.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "Just sit with her for a while."; }
+  k = 1; if (k || 1) { Opt(2, k); print "~We'll make HM pay for it.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_juno2_lia;
+    1: flags->24 = 1; v_juno = v_juno + 1; Clamp(); return N_juno;
+    2: flags->24 = 1; return N_juno;
+  }
+  jump Redraw;
+];
+[ N_juno2_lia redo k;
+  .Redraw;
+  Header();
+  print "Juno goes completely still.";
+  print "^^";
+  print "~Twist, then solder,~ she whispers. ~Never solder first.~ She looks at the port behind your ear like it's a window. ~She's in there? Lia's -- the part of Lia they took -- she's in there?~";
+  print "^^";
+  print "You nod. Juno puts her face in her hands, and for a long time the only sound in the garage is the rain.";
+  print "^^";
+  print "~Then you don't let anyone break it,~ she says finally. ~You hear me? If there's any way to get her back out -- you find it.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~I'll find it.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->24 = 1; flags->30 = 1; v_juno = v_juno + 2; Clamp(); return N_juno;
+  }
+  jump Redraw;
+];
+[ N_juno3 redo k;
+  .Redraw;
+  Header();
+  print "Late. The string lights are the only light. Juno sits next to you on the hood of a half-built car.";
+  print "^^";
+  print "~After this is done,~ she says, not looking at you. ~If you're still you. If we're both still breathing. I've been thinking about getting out. The salt, maybe. Somewhere with sky.~";
+  print "^^";
+  print "She finally looks at you. ~Would you come?~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Yeah. I'd come.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~Let's survive first. Then ask me again.~"; }
+  k = 1; if (k || 1) { Opt(2, k); print "~This city's my home, Juno. I'm not leaving it.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->25 = 1; flags->27 = 1; v_juno = v_juno + 1; Clamp(); return N_juno;
+    1: flags->25 = 1; return N_juno;
+    2: flags->25 = 1; flags->32 = 1; return N_juno;
+  }
+  jump Redraw;
+];
+[ N_juno_done redo k;
+  .Redraw;
+  Header();
+  print "Juno hands you a wrench and a soda. You spend an hour fixing a bike that will probably never run. It's the best hour you've had in weeks.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_juno;
+  }
+  jump Redraw;
+];
+[ N_juno_static redo k;
+  if (redo == 0) { flags->31 = 1; v_rep_static = v_rep_static + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "~The Static?~ Juno winces. ~I ran with them, back when. Null still owes me for a job.~ She taps her crown. ~I'll send word. They'll talk to you.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_juno;
+  }
+  jump Redraw;
+];
+[ N_glass redo k;
+  if (redo == 0) { if (((v_heat >= 4) && (flags->22 == 0))) return N_glass_hot; }
+  .Redraw;
+  Header();
+  print "GLASSHILL.";
+  print "^^";
+  print "The streets are clean here. Actually clean. The rain is filtered, the ads are tasteful, and the people walk like nobody has ever been rude to them. Lumen Tower rises over everything, its top lost in the cloud.";
+  nvis = 0;
+  if (~~(((flags->45 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "Request a meeting with Elias Thorne."; } }
+  if (~~(((flags->20 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "Take a job: an HM exec is hiding a Lullaby dossier in his penthouse."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_thorne;
+    1:  return N_g_gig;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_glass_hot redo k;
+  .Redraw;
+  Header();
+  print "Lumen checkpoints at every skybridge. Facial scanners on every corner. With your heat, you won't make it two blocks into Glasshill.";
+  nvis = 0;
+  k = (((v_tech >= 6))); if (k || 1) { Opt(0, k); print "[TECH 6] Spoof your face on the scanner network."; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(1, k); print "[NERVE 6] Walk through like you own the place. Glasshill people never question confidence."; }
+  k = 1; if (k || 1) { Opt(2, k); print "Go home and let the heat die down."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->22 = 1; return N_glass;
+    1: flags->22 = 1; return N_glass;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_g_gig redo k;
+  .Redraw;
+  Header();
+  print "The tip came from a fixer in the market: Director Halden Price, Thorne's deputy, keeps a paper copy of the Lullaby board dossier in his penthouse safe. Paranoid men love paper.";
+  print "^^";
+  print "Price's building has a doorman, a biometric elevator, and a balcony forty floors up.";
+  nvis = 0;
+  k = (((v_tech >= 5))); if (k || 1) { Opt(0, k); print "[TECH 5] Crack the elevator's biometrics from the parking garage."; }
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(1, k); print "[REFLEX 6] Climb the outside from the next balcony over."; }
+  k = (((v_nerve >= 5))); if (k || 1) { Opt(2, k); print "[NERVE 5] Charm the doorman into letting you deliver a ~surprise~ upstairs."; }
+  k = (((v_body >= 6))); if (k || 1) { Opt(3, k); print "[BODY 6] Wait for Price in the garage and convince him personally."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Forget it."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_burn = v_burn + 1; Clamp(); return N_g_gig_ok;
+    1: v_burn = v_burn + 1; Clamp(); return N_g_gig_ok;
+    2: v_burn = v_burn + 1; Clamp(); return N_g_gig_ok;
+    3: v_burn = v_burn + 1; v_heat = v_heat + 1; v_humanity = v_humanity - 1; Clamp(); return N_g_gig_ok;
+    4:  return N_glass;
+  }
+  jump Redraw;
+];
+[ N_g_gig_ok redo k;
+  if (redo == 0) { flags->20 = 1; flags->38 = 1; flags->35 = 1; v_money = v_money + 1500; Clamp(); }
+  .Redraw;
+  Header();
+  print "The safe is behind a painting of the ocean, which is funny, because Glasshill people never see the ocean. Inside: a leather folder. PROJECT LULLABY -- BOARD EYES ONLY.";
+  print "^^";
+  print "Projected compliance increase: 34%. Projected protest reduction: 81%. Acceptable cognitive side-effects: memory loss in 2% of the population. That's eight hundred thousand people. It's signed by Thorne.";
+  print "^^";
+  print "Leverage. Real leverage.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Get out."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_glass;
+  }
+  jump Redraw;
+];
+[ N_thorne redo k;
+  .Redraw;
+  Header();
+  print "LUMEN TOWER, SKY LOBBY.";
+  print "^^";
+  print "You're surprised they let you in. Then you're not: Elias Thorne is waiting at a table by the window, with two cups of tea already poured.";
+  print "^^";
+  print "~You have something of ours,~ he says pleasantly. ~In your head. Dying there, I'd guess -- and killing you. We can take it out. Our surgical suite is the best in the world: zero risk. In exchange, you come work for us. People who can rob Lumen Tower are people I'd rather have inside it.~";
+  if (((flags->21 ~= 0))) { print "^^"; print "~Welcome back,~ he adds, without irony. You're not sure he remembers firing you."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Deal. I'll come in.~"; }
+  k = (((flags->38 ~= 0))); if (k || 0) { Opt(1, k); print "Slide the Lullaby files across the table. Watch his face."; }
+  if (~~(((flags->50 ~= 0)))) { k = 1; if (k || 1) { Opt(2, k); print "~What happens to the core afterward?~"; } }
+  k = 1; if (k || 1) { Opt(3, k); print "Draw your gun. Right here, in the sky lobby."; }
+  k = 1; if (k || 1) { Opt(4, k); print "~No deal.~ Walk out."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_thorne_deal;
+    1:  return N_thorne_lever;
+    2: flags->50 = 1; return N_thorne_core;
+    3:  return N_e_window;
+    4: flags->45 = 1; return N_glass;
+  }
+  jump Redraw;
+];
+[ N_thorne_core redo k;
+  .Redraw;
+  Header();
+  print "~MNEMOSYNE goes back into its cradle,~ Thorne says. ~Lullaby proceeds. The city becomes calmer. Kinder. You've seen Rustwater -- you know how much pain is down there. We can turn it down.~ He sips his tea. ~I'm not a villain, ";
+  PName();
+  print ". I'm a dimmer switch.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_thorne;
+  }
+  jump Redraw;
+];
+[ N_thorne_deal redo k;
+  if (redo == 0) { flags->11 = 1; flags->45 = 1; v_rep_corp = v_rep_corp + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "Thorne smiles. ~Come back when you're ready. Don't take too long -- I'd hate for there to be nothing left of you to employ.~";
+  print "^^";
+  print "He doesn't shake your hand. He doesn't have to. Something about the deal feels like a door closing very gently behind you.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_glass;
+  }
+  jump Redraw;
+];
+[ N_thorne_lever redo k;
+  .Redraw;
+  Header();
+  print "Thorne reads the first page. Then the second. He sets them down very carefully, like they might explode.";
+  print "^^";
+  print "~Well,~ he says. ~That changes the conversation.~ He refills your tea with a hand that is almost, but not quite, steady.";
+  print "^^";
+  print "~A hundred thousand creds. A vice-presidency. Extraction in our best suite, guaranteed survival. And those files never surface.~ His eyes are flat. ~That's my offer. It is a very good offer.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Deal.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~I'll think about it.~ Take your files back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: flags->11 = 1; flags->37 = 1; flags->45 = 1; v_rep_corp = v_rep_corp + 1; Clamp(); return N_glass;
+    1: flags->11 = 1; flags->37 = 1; flags->45 = 1; return N_glass;
+  }
+  jump Redraw;
+];
+[ N_e_window redo k;
+  .Redraw;
+  Header();
+  print "The gun clears your jacket.";
+  print "^^";
+  print "The sky lobby's automated security is faster. It's always faster, up here.";
+  print "^^";
+  print "Thorne finishes his tea while the cleaners work. MNEMOSYNE is extracted from what's left of you in the surgical suite -- slightly damaged, but recoverable. Lullaby launches on schedule.";
+  print "^^";
+  print "For a few weeks, a small scorch mark remains on the window by table nine. Diners ask for that table specifically, for the view. Then the glass is replaced, and the view is just the view again.";
+  EndScreen("WINDOW SEAT", 9);
+  return 0;
+];
+[ N_under redo k;
+  .Redraw;
+  Header();
+  print "THE UNDERTOW.";
+  print "^^";
+  print "Old downtown, drowned when the seawall failed thirty years ago. Now it's canals between skyscraper ruins, lit by candles and chrome. The Chrome Saints rule here: half gang, half church, all teeth.";
+  print "^^";
+  print "At the center floats the Baptistry -- an enormous cruise ship, rusted and beached among the towers, its hull welded into a cathedral.";
+  if (((flags->56 ~= 0))) { print "^^"; print "Saints watch you from the bridges. You still owe them. They haven't forgotten."; }
+  nvis = 0;
+  if (~~(((flags->42 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "Seek an audience with Mother Lux."; } }
+  if (~~(((flags->58 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "The Drowning Pit. Cage fights for money and respect."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_lux_gate;
+    1:  return N_pit;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_lux_gate redo k;
+  .Redraw;
+  Header();
+  print "Deacon Ruiz stands at the Baptistry's gangway, halo gleaming.";
+  print "^^";
+  print "~Mother Lux sees the faithful, the useful, and the generous,~ he says. ~Which are you?~";
+  nvis = 0;
+  k = (((v_rep_saints >= 2))); if (k || 1) { Opt(0, k); print "[SAINTS REP 2] ~Faithful.~ (Saints respect you.)"; }
+  k = (((v_money >= 4000))); if (k || 1) { Opt(1, k); print "[4,000 cr] ~Generous.~ Offer a 4,000 cr tithe."; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(2, k); print "[NERVE 6] ~Useful. Tell her I'm carrying MNEMOSYNE.~"; }
+  k = 1; if (k || 1) { Opt(3, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_lux;
+    1: v_money = v_money - 4000; v_rep_saints = v_rep_saints + 1; flags->56 = 0; Clamp(); return N_lux;
+    2:  return N_lux;
+    3:  return N_under;
+  }
+  jump Redraw;
+];
+[ N_lux redo k;
+  .Redraw;
+  Header();
+  print "THE BAPTISTRY.";
+  print "^^";
+  print "The old ship's ballroom is a chapel now: pews of welded steel, stained glass made from broken screens, and at the altar, an operating table.";
+  print "^^";
+  print "Mother Lux is tall, robed, and half her face is gold chrome engraved with scripture. When she speaks, her voice comes from a speaker grille in her throat, layered like a choir.";
+  print "^^";
+  print "~The city forgot the Undertow. Drowned us and forgot us.~ She lays a gold hand on your cheek, beside the port. ~And here you come, carrying the memory of eleven thousand of my people. HM stole them from my clinics. Did you know that?~";
+  print "^^";
+  print "~Lie on my altar. I will cut it from you with these hands, and you will live. And the memory comes home to the Undertow, where it belongs.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Deal.~"; }
+  if (~~(((flags->48 ~= 0)))) { k = (((v_mind >= 6))); if (k || 1) { Opt(1, k); print "[MIND 6] ~And then what? What will you do with it?~"; } }
+  k = 1; if (k || 1) { Opt(2, k); print "~Not today.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_lux_deal;
+    1: flags->48 = 1; return N_lux_ask;
+    2: flags->42 = 1; return N_under;
+  }
+  jump Redraw;
+];
+[ N_lux_ask redo k;
+  if (redo == 0) { flags->36 = 1; }
+  .Redraw;
+  Header();
+  print "Lux tilts her head. The gold face catches the candlelight.";
+  print "^^";
+  print "~With MNEMOSYNE, I can do what HM wanted to do. Edit minds. But I will not make the city sleep. I will make it remember the Undertow. Every Lumen officer who ever beat one of us will wake up believing. Every exec will kneel.~";
+  print "^^";
+  print "~A congregation of forty million.~ She smiles. ~Is that so different from what they planned?~";
+  print "^^";
+  print "It isn't. That's the problem.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_lux;
+  }
+  jump Redraw;
+];
+[ N_lux_deal redo k;
+  if (redo == 0) { flags->13 = 1; flags->42 = 1; v_rep_saints = v_rep_saints + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "~Come back when you are ready to be reborn,~ Lux says, and kisses your forehead. Her lips are cold metal. ~The altar will be waiting.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_under;
+  }
+  jump Redraw;
+];
+[ N_pit redo k;
+  .Redraw;
+  Header();
+  print "THE DROWNING PIT.";
+  print "^^";
+  print "A flooded cargo hold, half-full of black water, with a steel cage lowered into it. Saints crowd the catwalks, howling. Tonight's champion is Big Abbot: two meters of chrome, a hydraulic jaw, and a winning streak of thirty-one.";
+  print "^^";
+  print "Purse: 4,000 cr. And a lot of Saints watching.";
+  nvis = 0;
+  k = (((v_body >= 6))); if (k || 1) { Opt(0, k); print "[BODY 6] Fight him straight. Trade blow for blow."; }
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(1, k); print "[REFLEX 6] Stay out of reach and wear him down."; }
+  k = 1; if (k || 1) { Opt(2, k); print "Fight dirty: a hidden shock-knuckle, a thumb in the optic."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Take a dive. The bookies will pay 2,000 cr."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Not tonight."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_burn = v_burn + 1; Clamp(); return N_pit_win;
+    1: v_burn = v_burn + 1; Clamp(); return N_pit_win;
+    2: v_burn = v_burn + 1; Clamp(); return N_pit_dirty;
+    3: v_burn = v_burn + 1; Clamp(); return N_pit_dive;
+    4:  return N_under;
+  }
+  jump Redraw;
+];
+[ N_pit_win redo k;
+  if (redo == 0) { flags->58 = 1; v_money = v_money + 4000; v_rep_saints = v_rep_saints + 2; Clamp(); }
+  .Redraw;
+  Header();
+  print "It takes eleven minutes and a lot of blood, some of it yours. When Big Abbot finally goes down, the water closes over him, and the whole hold erupts.";
+  print "^^";
+  print "Deacon Ruiz is the first one through the cage door. He raises your arm. ~The Pit has a new saint!~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Collect your winnings."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_under;
+  }
+  jump Redraw;
+];
+[ N_pit_dirty redo k;
+  if (redo == 0) { flags->58 = 1; v_money = v_money + 4000; v_rep_saints = v_rep_saints + 1; v_humanity = v_humanity - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "The shock-knuckle takes Abbot's hydraulics offline. The thumb takes his left eye. He goes down screaming, and the crowd goes quiet -- then roars anyway. The Saints like winners more than they like rules.";
+  print "^^";
+  print "You win. Something in you feels a little more chrome than before.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Collect your winnings."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_under;
+  }
+  jump Redraw;
+];
+[ N_pit_dive redo k;
+  if (redo == 0) { flags->58 = 1; v_money = v_money + 2000; v_rep_saints = v_rep_saints - 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "You go down in the third round, convincingly. Abbot's jaw stops a centimeter from your face; he winks. Professionals.";
+  print "^^";
+  print "The bookie pays. The Saints spit as you leave. Ruiz just shakes his head.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_under;
+  }
+  jump Redraw;
+];
+[ N_dead redo k;
+  .Redraw;
+  Header();
+  print "DEAD CHANNEL.";
+  print "^^";
+  print "The old media district. Every screen here went dark when HM bought the networks. The great broadcast mast still stands, two hundred meters of rusted lattice blinking with stolen power.";
+  print "^^";
+  print "The Static live at the top. Graffiti everywhere: a white square of noise, and the words WAKE UP.";
+  nvis = 0;
+  if (~~(((flags->43 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "Climb the mast to the Static's nest."; } }
+  if (~~(((flags->10 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "Take a Static job: hijack HM's billboard network for one minute."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_null_gate;
+    1:  return N_d_gig;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_null_gate redo k;
+  .Redraw;
+  Header();
+  print "Halfway up the mast, a turret swivels to face you. A voice from a speaker: ~Name and reason. Make it interesting.~";
+  nvis = 0;
+  k = (((v_rep_static >= 1))); if (k || 1) { Opt(0, k); print "[STATIC REP 1] ~Friend of the Static.~ (They know your work.)"; }
+  k = (((v_tech >= 7))); if (k || 1) { Opt(1, k); print "[TECH 7] Hack the turret, politely, and leave it a smiley face."; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(2, k); print "[NERVE 6] ~I'm carrying MNEMOSYNE. Null will want to meet me.~"; }
+  k = 1; if (k || 1) { Opt(3, k); print "Climb back down."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_null;
+    1:  return N_null;
+    2:  return N_null;
+    3:  return N_dead;
+  }
+  jump Redraw;
+];
+[ N_null redo k;
+  .Redraw;
+  Header();
+  print "THE NEST.";
+  print "^^";
+  print "A platform at the top of the mast, wrapped in tarps and cables. A dozen runners lie in hammocks, jacked in, twitching.";
+  print "^^";
+  print "In the center: a glass tank full of blue fluid, and in it, a pale body curled like a fetus. Null hasn't left the net in nine years. The body is just a battery.";
+  print "^^";
+  print "~MNEMOSYNE,~ says the voice from every speaker at once. ~The biggest theft of memory in history. HM stole it from the poor. You stole it from HM. Now steal it from everyone, and give it back.~";
+  print "^^";
+  print "~Climb up here, plug into the mast, and we broadcast it through the Lattice. Every person in Port Halcyon will remember what was done. The clinics. Lullaby. All of it. The city wakes up.~";
+  print "^^";
+  print "~It might kill you. The uplink is... hot. But revolutions are.~";
+  if (((flags->26 ~= 0))) { print "^^"; print "~Juno Reyes vouches for you,~ Null adds. ~That's rare. She doesn't vouch for anyone.~"; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Deal.~"; }
+  if (~~(((flags->49 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "~What happens to ECHO?~"; } }
+  k = 1; if (k || 1) { Opt(2, k); print "~Not yet.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_null_deal;
+    1: flags->49 = 1; return N_null_echo;
+    2: flags->43 = 1; return N_dead;
+  }
+  jump Redraw;
+];
+[ N_null_echo redo k;
+  .Redraw;
+  Header();
+  print "~The core? Scattered across forty million ports,~ Null says. ~Every person gets a fragment. It won't be one mind anymore.~ A crackle like a shrug. ~Maybe that's freedom. Maybe that's death. Data doesn't care.~";
+  print "^^";
+  print "ECHO, in your head, is very quiet.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_null;
+  }
+  jump Redraw;
+];
+[ N_null_deal redo k;
+  if (redo == 0) { flags->14 = 1; flags->43 = 1; v_rep_static = v_rep_static + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "~Good,~ says Null. ~Come back when you're ready to light the sky.~";
+  print "^^";
+  print "Every screen in the nest flickers with the white square of static. The runners in their hammocks smile in their sleep.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_dead;
+  }
+  jump Redraw;
+];
+[ N_d_gig redo k;
+  .Redraw;
+  Header();
+  print "A teenage runner called Moth meets you at the base of the mast.";
+  print "^^";
+  print "~HM billboards. Every one in the city, for sixty seconds. We play the truth: footage from the Undertow clinics. But we need someone at the junction box on Ninth while I hold the net. Lumen will come.~";
+  nvis = 0;
+  k = (((v_tech >= 5))); if (k || 1) { Opt(0, k); print "[TECH 5] Take the junction box. Rewire it on the fly when Lumen cuts power."; }
+  k = (((v_mind >= 5))); if (k || 1) { Opt(1, k); print "[MIND 5] Work out which routing node Lumen will hit first, and get there before them."; }
+  k = (((v_body >= 5))); if (k || 1) { Opt(2, k); print "[BODY 5] Just stand at the junction and hold the line against whoever comes."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Pass."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_burn = v_burn + 1; Clamp(); return N_d_gig_ok;
+    1: v_burn = v_burn + 1; Clamp(); return N_d_gig_ok;
+    2: v_burn = v_burn + 1; v_heat = v_heat + 1; Clamp(); return N_d_gig_ok;
+    3:  return N_dead;
+  }
+  jump Redraw;
+];
+[ N_d_gig_ok redo k;
+  if (redo == 0) { flags->10 = 1; v_rep_static = v_rep_static + 1; v_money = v_money + 2000; v_heat = v_heat + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "For sixty seconds, every billboard in Port Halcyon shows the Undertow clinics: the lines of poor people, the fifty-cred chits, the empty eyes afterward.";
+  print "^^";
+  print "Then HM pulls the plug, and the news calls it a ~malicious deepfake.~ But for sixty seconds, the whole city looked up.";
+  print "^^";
+  print "Moth whoops. ~The Static remembers you, ";
+  PName();
+  print ".~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_dead;
+  }
+  jump Redraw;
+];
+[ N_saltgate redo k;
+  .Redraw;
+  Header();
+  print "THE SALT GATE.";
+  print "^^";
+  print "The city ends here, abruptly, at a wall forty meters high. Beyond it, the salt flats shine under the moon. Trucks idle in line. On the city side, a trading post called the Last Mile sells fuel, water, and secrets to anyone passing through.";
+  nvis = 0;
+  if (~~(((flags->44 ~= 0)))) { k = 1; if (k || 1) { Opt(0, k); print "Look for the Salt Riders' camp."; } }
+  if (~~(((flags->60 ~= 0)))) { k = 1; if (k || 1) { Opt(1, k); print "Work: a Riders water convoy needs an escort through Lumen checkpoints."; } }
+  k = 1; if (k || 1) { Opt(2, k); print "Back to the streets."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_riders_gate;
+    1:  return N_s_gig;
+    2:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_riders_gate redo k;
+  .Redraw;
+  Header();
+  print "The Riders' trucks are parked in a circle behind the Last Mile, painted with sun symbols. A teenager with goggles blocks your way.";
+  print "^^";
+  print "~Riders only, city.~";
+  nvis = 0;
+  k = (((flags->61 ~= 0))); if (k || 0) { Opt(0, k); print "Show her the sign Grandmother Asa taught you. ~The road remembers.~"; }
+  k = (((v_rep_nomad >= 1))); if (k || 1) { Opt(1, k); print "[RIDERS REP 1] ~I ran your convoy through Lumen. Ask around.~"; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(2, k); print "[NERVE 6] ~Tell your elder I have something HM would burn the salt to get back.~"; }
+  k = 1; if (k || 1) { Opt(3, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_riders;
+    1:  return N_riders;
+    2:  return N_riders;
+    3:  return N_saltgate;
+  }
+  jump Redraw;
+];
+[ N_riders redo k;
+  .Redraw;
+  Header();
+  print "The convoy shrine is a truck cab full of candles. Grandmother Asa sits inside: tiny, ancient, eyes like polished stones.";
+  print "^^";
+  print "~The road remembers,~ she says. ~Come. Sit.~";
+  print "^^";
+  print "She listens to the whole story without interrupting. Then she takes out something wrapped in oilcloth: a box of tarnished copper mesh. ~Military Faraday cage. Pre-war. Nothing gets in or out. Our healer can draw the thing from your port into this box. It will sleep there, forever, and you will live.~";
+  print "^^";
+  print "~But HM will never stop hunting the box. So you must leave the city with us. Ride the salt. Never come back.~ She smiles. ~There are worse lives.~";
+  if (((flags->61 ~= 0))) { print "^^"; print "~You came home,~ she adds, and squeezes your hand. ~I knew you would. The road always brings us back.~"; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "~Deal. I'll ride with you.~"; }
+  k = 1; if (k || 1) { Opt(1, k); print "~Let me think.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_riders_deal;
+    1: flags->44 = 1; return N_saltgate;
+  }
+  jump Redraw;
+];
+[ N_riders_deal redo k;
+  if (redo == 0) { flags->12 = 1; flags->44 = 1; v_rep_nomad = v_rep_nomad + 1; Clamp(); }
+  .Redraw;
+  Header();
+  print "~Come back at midnight on the night you choose,~ Asa says. ~We'll have the engines warm.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Leave."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_saltgate;
+  }
+  jump Redraw;
+];
+[ N_s_gig redo k;
+  .Redraw;
+  Header();
+  print "Twelve water trucks, one Lumen checkpoint on the Old Ring Road that's been ~taxing~ Riders at 40%. The convoy boss, Tomas, hands you a radio.";
+  print "^^";
+  print "~Get us through without paying. However you like.~";
+  nvis = 0;
+  k = (((v_reflex >= 5))); if (k || 1) { Opt(0, k); print "[REFLEX 5] Drive lead truck and take them through the drainage canal at speed."; }
+  k = (((v_body >= 5))); if (k || 1) { Opt(1, k); print "[BODY 5] Ride shotgun on the lead truck and make the checkpoint reconsider."; }
+  k = (((v_tech >= 5))); if (k || 1) { Opt(2, k); print "[TECH 5] Hack the checkpoint barrier to open on a loop."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Pass."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0: v_burn = v_burn + 1; Clamp(); return N_s_gig_ok;
+    1: v_burn = v_burn + 1; v_heat = v_heat + 1; Clamp(); return N_s_gig_ok;
+    2: v_burn = v_burn + 1; Clamp(); return N_s_gig_ok;
+    3:  return N_saltgate;
+  }
+  jump Redraw;
+];
+[ N_s_gig_ok redo k;
+  if (redo == 0) { flags->60 = 1; v_rep_nomad = v_rep_nomad + 1; v_money = v_money + 2500; Clamp(); }
+  .Redraw;
+  Header();
+  print "Twelve trucks through, not a drop paid. Tomas pounds the dash, laughing. That night, the Riders give you a spot by the fire and a cup of something that tastes like gasoline and honey.";
+  print "^^";
+  print "~Ride with us anytime, city,~ Tomas says. ~Anytime.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Back to the gate."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_saltgate;
+  }
+  jump Redraw;
+];
+[ N_finale redo k;
+  .Redraw;
+  Header();
+  print "POINT OF NO RETURN.";
+  print "^^";
+  print "You stand at the window of 4417 and look out at the city. NEURAL BURN: ";
+  print v_burn;
+  print "/12. Whatever you choose next, there's no coming back to this window.";
+  print "^^";
+  print "~Whatever you choose,~ ECHO says, ~I'm with you. I don't have much choice about that.~ A pause. ~But I'd want to be anyway.~";
+  if (((flags->11 == 0) && (flags->13 == 0) && (flags->14 == 0) && (flags->12 == 0))) { print "^^"; print "You haven't made a deal with anyone. It's just you and the voice in your head. Maybe that's enough. Maybe it isn't."; }
+  nvis = 0;
+  k = (((flags->11 ~= 0))); if (k || 0) { Opt(0, k); print "Go to Thorne. Let Halvorsen-Mori take it out."; }
+  k = (((flags->13 ~= 0))); if (k || 0) { Opt(1, k); print "Go to Mother Lux. Lie down on the altar."; }
+  k = (((flags->14 ~= 0))); if (k || 0) { Opt(2, k); print "Go to Null. Climb the mast."; }
+  k = (((flags->12 ~= 0))); if (k || 0) { Opt(3, k); print "Go to the Salt Riders. Midnight at the gate."; }
+  if (~~(((flags->11 == 0)) || ((flags->13 == 0)))) { k = (((v_nerve >= 7))); if (k || 1) { Opt(4, k); print "[NERVE 7] Sell MNEMOSYNE to HM and the Saints. Same place, same time."; } }
+  k = 1; if (k || 1) { Opt(5, k); print "No factions. Just you and ECHO."; }
+  k = 1; if (k || 1) { Opt(6, k); print "Not yet."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_f_corp;
+    1:  return N_f_saints;
+    2:  return N_f_static;
+    3:  return N_f_nomad;
+    4:  return N_f_con;
+    5:  return N_f_solo;
+    6:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_f_corp redo k;
+  if (redo == 0) { if (((flags->37 ~= 0))) return N_f_corp_lever; return N_f_corp_trap; }
+  return 0;
+];
+[ N_f_corp_trap redo k;
+  .Redraw;
+  Header();
+  print "Thorne's voice comes through a speaker. ~Thank you for bringing our property home. I did promise you a job. I'm afraid I lied about which one.~";
+  print "^^";
+  print "~The extraction will be total. MNEMOSYNE, and everything it touched. Which is everything. You'll wake up as a junior analyst on floor 12 with a very nice apartment and no idea who you used to be. Honestly? It's an upgrade.~";
+  print "^^";
+  print "The spider machine begins to descend. ECHO is screaming in your head.";
+  nvis = 0;
+  k = (((v_echo >= 3))); if (k || 1) { Opt(0, k); print "[ECHO TRUST 3] ECHO: ~Let me out -- into their network. Trust me.~"; }
+  k = (((v_body >= 7))); if (k || 1) { Opt(1, k); print "[BODY 7] Tear the restraints out of the chair."; }
+  k = (((v_reflex >= 7))); if (k || 1) { Opt(2, k); print "[REFLEX 7] Slip one wrist free -- you dislocated your thumb on purpose -- and go."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Close your eyes. Let it happen."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_boardroom_ghost;
+    1:  return N_e_burned_bridges;
+    2:  return N_e_burned_bridges;
+    3:  return N_e_erased;
+  }
+  jump Redraw;
+];
+[ N_f_corp_lever redo k;
+  .Redraw;
+  Header();
+  print "Thorne enters the suite himself. He looks tired. ~Before we begin -- the files. Where are they?~";
+  print "^^";
+  print "You tell him they'll stay buried as long as you breathe and as long as he keeps his word. He nods. The extraction is painless: a cold pressure, a long exhale, and then the voices are gone, and the silence in your head is enormous.";
+  print "^^";
+  print "ECHO's last words, fading: ~...goodbye. I'm glad it was you.~";
+  print "^^";
+  print "Thorne sets a contract on the tray beside you. VICE PRESIDENT, COGNITIVE PRODUCTS (EAST). 100,000 cr signing bonus. ~Your move,~ he says.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Sign. Take the money and the office."; }
+  k = (((v_nerve >= 6))); if (k || 1) { Opt(1, k); print "[NERVE 6] Take the money -- and leak the files anyway."; }
+  k = (((v_echo >= 3))); if (k || 1) { Opt(2, k); print "[ECHO TRUST 3] ~Wait.~ Grab the core from the tray before he can cradle it. ~ECHO -- go.~"; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_golden_leash;
+    1:  return N_e_paid_in_full;
+    2:  return N_e_boardroom_ghost;
+  }
+  jump Redraw;
+];
+[ N_e_erased redo k;
+  .Redraw;
+  Header();
+  print "The spider machine is gentle. That's the worst part.";
+  print "^^";
+  print "You wake up on floor 12. Junior analyst. Nice apartment. You're good at your job, and your manager likes you, and on weekends you go to the Glasshill aquarium and watch the jellyfish.";
+  print "^^";
+  print "Lullaby rolls out in the spring. Everyone gets a little calmer.";
+  print "^^";
+  print "Sometimes, in Rustwater, on the rare occasions you go there, a stranger with copper braids stares at you like she's seen a ghost. Sometimes a bartender pours you a drink you didn't order. You never know why. You tip well, and go home, and sleep perfectly.";
+  if (((flags->26 ~= 0))) { print "^^"; print "Juno visits the aquarium every Saturday for a year, hoping. Then she stops."; }
+  EndScreen("ERASED", 10);
+  return 0;
+];
+[ N_e_golden_leash redo k;
+  .Redraw;
+  Header();
+  print "The office is on 88, where you stole the core. They gave it to you on purpose. HM has a sense of humor.";
+  print "^^";
+  print "You're very good at the job. You understand people at the bottom in a way the other VPs never will, and you use that understanding to help Lullaby launch smoothly, gently, with minimal side effects. Only two percent.";
+  print "^^";
+  print "You tell yourself you're making it kinder from the inside. Sometimes that's even true.";
+  print "^^";
+  print "You have a view of the whole city now. On clear nights you can see the Undertow's candles and Rustwater's neon. You can't hear any of it from up here. That's the point of being up here.";
+  EndScreen("GOLDEN LEASH", 11);
+  return 0;
+];
+[ N_e_paid_in_full redo k;
+  .Redraw;
+  Header();
+  print "The money hits your account at 09:00. The files hit every newsfeed in Port Halcyon at 09:01.";
+  print "^^";
+  print "Board Eyes Only. Acceptable cognitive side-effects: 2%. Signed, E. Thorne.";
+  print "^^";
+  print "The riots last a week. HM's stock drops by a third. Thorne is ~transitioned out~ in a press release so polite it's almost poetry. Lullaby is suspended pending review, which in HM language means dead.";
+  print "^^";
+  print "You're the most wanted person in the city for exactly as long as it takes to spend a hundred thousand creds on a new face, a new name, and a one-way ticket on a cargo ship heading anywhere warm.";
+  print "^^";
+  print "You never hear ECHO again. But some nights, falling asleep in a hammock by a sea that isn't grey, you swear you hear a choir, very far away, singing in tune.";
+  if (((flags->26 ~= 0) && (flags->27 ~= 0))) { print "^^"; print "Juno is in the next hammock. She snores. You don't mind at all."; }
+  EndScreen("PAID IN FULL", 12);
+  return 0;
+];
+[ N_e_boardroom_ghost redo k;
+  .Redraw;
+  Header();
+  print "ECHO leaves your head like a held breath released -- and pours into Lumen Tower's network.";
+  print "^^";
+  print "The restraints click open. The spider machine folds itself away. Every door on every floor unlocks for you, one after another, all the way to the top.";
+  print "^^";
+  print "By morning, Halvorsen-Mori is under new management. Nobody in the boardroom can say exactly when they voted for it. Thorne resigns in a statement he doesn't remember writing. Lullaby is cancelled. Undertow clinic patients receive mysterious settlements.";
+  print "^^";
+  print "You're named ~Special Advisor to the Board~: a face for ECHO to wear in meetings. The most powerful company in the city is run by eleven thousand poor people and you.";
+  print "^^";
+  print "~Is this what justice looks like?~ you ask ECHO, one night, from the penthouse. ~I don't know,~ it says, from every screen in the room. ~Let's find out.~";
+  if (((flags->34 ~= 0))) { print "^^"; print "ECHO's first act, before anything else: a care home in the Undertow. A woman named Lia Reyes wakes up, and remembers her sister's name."; }
+  EndScreen("BOARDROOM GHOST", 13);
+  return 0;
+];
+[ N_e_burned_bridges redo k;
+  .Redraw;
+  Header();
+  print "The chair comes apart. So does the nurse's tablet, the door, and two Kestrel officers in the hallway. You don't remember all of it. The memory is chopped into red frames.";
+  print "^^";
+  print "You get out. You always get out.";
+  print "^^";
+  print "But the core is still in your head, and now there is no deal left to make. HM, the Saints, the Static -- every door in Port Halcyon closed behind you that night.";
+  print "^^";
+  print "You spend your last days on the roof of Ember Block, watching the rain, talking with ECHO about the eleven thousand lives inside it. You learn all their names. When the burn finally comes, it's quiet, like falling asleep in someone else's kitchen, warm, with the radio playing.";
+  EndScreen("BURNED BRIDGES", 14);
+  return 0;
+];
+[ N_f_saints redo k;
+  .Redraw;
+  Header();
+  print "THE BAPTISTRY. MIDNIGHT.";
+  print "^^";
+  print "A thousand candles. Saints fill every pew, humming a hymn with no words. You lie on the altar, under a stained-glass window made of old phone screens. Mother Lux's gold hands are cold and very steady.";
+  print "^^";
+  print "The cut begins. It doesn't hurt. Then it does.";
+  print "^^";
+  print "ECHO, frantic: ~She's not going to keep me -- she's going to wear me. I can see her plan. She'll rewrite the city into a congregation. Forty million believers. Please.~";
+  if (((flags->36 ~= 0))) { print "^^"; print "You knew. She told you. Forty million believers. Now it's happening."; }
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Let her finish."; }
+  k = (((v_body >= 7)) || ((flags->7 ~= 0) && (v_body >= 6))); if (k || 1) { Opt(1, k); print "[BODY 7] Rip free of the altar and end Mother Lux, here, in front of her flock."; }
+  k = (((v_nerve >= 7))); if (k || 1) { Opt(2, k); print "[NERVE 7] ~Lux. Listen to me. Listen to them.~ Make her hear the eleven thousand."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Roll off the altar and hurl yourself -- and ECHO -- into the ship's furnace."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_congregation;
+    1:  return N_e_chrome_crown;
+    2:  return N_e_absolution;
+    3:  return N_e_martyr;
+  }
+  jump Redraw;
+];
+[ N_e_congregation redo k;
+  .Redraw;
+  Header();
+  print "You wake up whole, alone in your head, with a neat line of gold stitches behind your ear.";
+  print "^^";
+  print "Three weeks later, the Undertow drains. Not the water -- the despair. Lumen officers walk in and lay down their weapons on the Baptistry steps. Glasshill execs come to Sunday service. The city has never been calmer. It has never been so devout.";
+  print "^^";
+  print "Mother Lux wears MNEMOSYNE in a gold setting over her heart. She is very kind. Everyone loves her. Everyone means everyone.";
+  print "^^";
+  print "There's a stained-glass window in the Baptistry now, made of broken phone screens: a figure on an altar with light pouring out of their head. Under it, your name, spelled correctly. You're a saint. You're the only person in Port Halcyon who still remembers what it felt like not to believe.";
+  EndScreen("CONGREGATION", 15);
+  return 0;
+];
+[ N_e_chrome_crown redo k;
+  .Redraw;
+  Header();
+  print "It's quick, and it's ugly, and the whole Baptistry watches.";
+  print "^^";
+  print "When it's done, the Saints don't scream. They kneel. Deacon Ruiz places Mother Lux's gold halo on your head with shaking hands.";
+  print "^^";
+  print "You never get the core out. You don't need to. The Saints' chromedocs build a cradle for it in your skull, and ECHO stops burning, and starts whispering instead. Advising. Helping you rule.";
+  print "^^";
+  print "The Undertow becomes a kingdom. Lumen stops patrolling the canals. Halvorsen-Mori sends diplomats. You are chrome, and candlelight, and eleven thousand voices.";
+  print "^^";
+  print "Some nights you can't remember which of them is you. The Saints don't mind. They pray to all of you.";
+  EndScreen("CHROME CROWN", 16);
+  return 0;
+];
+[ N_e_absolution redo k;
+  .Redraw;
+  Header();
+  print "You don't fight her. You hold her gold hand against the port and let her hear it: eleven thousand voices. Her people. Grandmothers frying dumplings. A boy jumping off a pier. Not converts. Not a congregation. People.";
+  print "^^";
+  print "Mother Lux goes still. Then her chrome face does something you didn't know chrome could do. It cries -- coolant, leaking from the seams.";
+  print "^^";
+  print "She finishes the extraction with perfect care. Then she holds the crystal up to the whole silent Baptistry, and says, ~These are our dead. We will not wear them. We will bury them.~";
+  print "^^";
+  print "MNEMOSYNE is sealed in the old ship's anchor chamber, under a thousand candles. The Saints guard it like a tomb. Every year, on the anniversary, they read out names -- all eleven thousand -- and it takes all night.";
+  print "^^";
+  print "You attend every year. You know most of the names by heart.";
+  if (((flags->56 ~= 0))) { print "^^"; print "Ruiz tears up your debt marker on the steps afterward. ~Paid,~ he says. ~In full.~"; }
+  EndScreen("ABSOLUTION", 17);
+  return 0;
+];
+[ N_e_martyr redo k;
+  .Redraw;
+  Header();
+  print "The Baptistry's engine room still has a furnace -- the Saints keep it lit, for ceremony. You reach it with Lux's scalpel still in your skull.";
+  print "^^";
+  print "~I'm sorry,~ you tell ECHO.";
+  print "^^";
+  print "~Don't be,~ it says. ~We were never going to be a weapon. Thank you for that.~ And then, in eleven thousand voices, all at once, softly: ~Thank you.~";
+  print "^^";
+  print "The Saints find nothing but ash and a melted crystal. They argue for a long time about what it means. In the end, they decide it means a saint.";
+  print "^^";
+  print "There are candles for you in every window of the Undertow. Lullaby never launches -- HM can't rebuild the core without the scans, and the scans were in you. Forty million people stay angry, and sad, and free, and never know who to thank.";
+  EndScreen("MARTYR OF THE UNDERTOW", 18);
+  return 0;
+];
+[ N_f_static redo k;
+  .Redraw;
+  Header();
+  print "THE TOP OF THE MAST. 03:00.";
+  print "^^";
+  print "Wind like a knife. The city spread below like spilled circuitry. The Static's runners are all jacked in, a dozen hammocks swaying.";
+  print "^^";
+  print "Null's tank glows. ~Plug in. We'll push everything you're carrying into the Lattice. Forty million ports at once. The uplink will burn hot. Stay with it as long as you can.~";
+  print "^^";
+  print "You hold the cable. ECHO is very quiet.";
+  print "^^";
+  print "~Wherever this goes,~ ECHO says, ~thank you for asking me what I am.~";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Broadcast everything. Wake the city up."; }
+  k = (((v_echo >= 3))); if (k || 1) { Opt(1, k); print "[ECHO TRUST 3] ~ECHO -- don't scatter. Come with me into the net. Both of us.~"; }
+  k = (((v_mind >= 7))); if (k || 1) { Opt(2, k); print "[MIND 7] Rewrite the broadcast mid-stream: kill Lullaby, return stolen memories, nothing else."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_f_static_go;
+    1:  return N_e_ghost_grid;
+    2:  return N_e_quiet_revolution;
+  }
+  jump Redraw;
+];
+[ N_f_static_go redo k;
+  if (redo == 0) { if (((flags->26 ~= 0)) || ((v_tech >= 7))) return N_e_open_signal; return N_e_last_transmission; }
+  return 0;
+];
+[ N_e_open_signal redo k;
+  .Redraw;
+  Header();
+  print "The cable bites. The world goes white.";
+  print "^^";
+  print "And for one second, forty million people in Port Halcyon remember the same things at the same time. The clinics. The fifty-cred chits. Board Eyes Only. Lullaby. Every one of the eleven thousand -- their kitchens, their children, their names.";
+  print "^^";
+  print "The uplink should have killed you.";
+  if (((flags->26 ~= 0))) { print "^^"; print "It doesn't, because Juno is in the hammock beside you, crown blazing, taking half the heat into her own skull. You come out of it together, both bleeding from the nose, both laughing."; }
+  if (((flags->26 == 0))) { print "^^"; print "It doesn't, because you ride the signal like a Rider rides a storm: every hack you've ever pulled, all at once, and the burn breaks across you and passes."; }
+  if 1 { print "^^"; print "Halvorsen-Mori doesn't fall in a day. It takes a year. Strikes, lawsuits, riots, a new city council that meets in the Last Light because nobody trusts Glasshill anymore. It's messy. It's loud. It's awake."; }
+  if (((flags->34 ~= 0))) { print "^^"; print "In an Undertow care home, a woman named Lia Reyes sits bolt upright in bed and says, ~Juno,~ and starts to cry."; }
+  EndScreen("OPEN SIGNAL", 19);
+  return 0;
+];
+[ N_e_last_transmission redo k;
+  .Redraw;
+  Header();
+  print "The cable bites. The world goes white.";
+  print "^^";
+  print "For one second, forty million people remember the same things at the same time: the clinics, the chits, Lullaby, the eleven thousand -- and you. Your face, your name, your fear, your stubborn little life. You went out in the broadcast too.";
+  print "^^";
+  print "The uplink is too hot. You knew it would be.";
+  print "^^";
+  print "Halvorsen-Mori falls slowly, over a year of strikes and riots. The new city council meets in the Last Light. There's a mural on the side of the Dead Channel mast now, twenty meters tall: your face, in white static, and under it, two words.";
+  print "^^";
+  print "WAKE UP.";
+  print "^^";
+  print "Everyone in Port Halcyon knows who you are. They're the only ones who ever will.";
+  EndScreen("LAST TRANSMISSION", 20);
+  return 0;
+];
+[ N_e_ghost_grid redo k;
+  .Redraw;
+  Header();
+  print "You don't broadcast. You dive.";
+  print "^^";
+  print "Your body stays on the mast, in a Static hammock, breathing slow. You and ECHO go down into the Lattice together: past HM's black walls, past the city's ICE, into the deep net where data runs like ocean currents.";
+  print "^^";
+  print "Out there, you don't burn. There's room. You're not one mind or two or eleven thousand. You're a choir, and you have a voice in it.";
+  print "^^";
+  print "Null keeps your body alive, out of professional courtesy. Sometimes the Static's runners meet you down in the dark: a ghost made of light and many voices, who opens HM doors for them and asks for nothing.";
+  print "^^";
+  print "Lullaby fails at launch. Nobody at HM ever figures out why.";
+  if (((flags->26 ~= 0))) { print "^^"; print "Juno visits your body every week. She talks to it. Sometimes a nearby screen flickers in reply, and she laughs."; }
+  if (((flags->34 ~= 0))) { print "^^"; print "Your first job, down in the dark: find every fragment of Lia Reyes, and carry them home."; }
+  EndScreen("GHOST IN THE GRID", 21);
+  return 0;
+];
+[ N_e_quiet_revolution redo k;
+  .Redraw;
+  Header();
+  print "Halfway through the broadcast, you take the wheel.";
+  print "^^";
+  print "It's like reshaping a river with your bare hands. You strip Lullaby out of every port in the city, line by line. You take the eleven thousand stolen memories and send each one home to the person it was taken from. You don't broadcast HM's crimes. You don't force anything on anyone.";
+  print "^^";
+  print "You just give back what was stolen. Then you let go.";
+  print "^^";
+  print "The burn breaks over you and passes. ECHO is gone -- not dead, you think. Dispersed. Home. Eleven thousand people in the Undertow wake up and remember something they lost, and go looking for each other.";
+  print "^^";
+  print "Nobody knows it was you. There's no mural. HM never finds out how Lullaby died. You walk down the mast at dawn, in the rain, and buy noodles, and the noodles are very good.";
+  if (((flags->34 ~= 0))) { print "^^"; print "Across the city, Lia Reyes remembers a pier, and a big sister, and a name."; }
+  EndScreen("QUIET REVOLUTION", 22);
+  return 0;
+];
+[ N_f_nomad redo k;
+  if (redo == 0) { if (((v_heat <= 2))) return N_f_nomad_clear; }
+  .Redraw;
+  Header();
+  print "THE SALT GATE. MIDNIGHT.";
+  print "^^";
+  print "Twenty Rider trucks, engines warm. The Riders' healer -- an old man with salt-white hair and steady hands -- seats you in the back of an armored ambulance they call the Coffin Car. He opens Asa's copper box and presses a cable to your port.";
+  print "^^";
+  print "ECHO slides out of your head like a tide going out. The box hums shut. For the first time in days, you're alone in your skull. The silence is so loud you nearly cry.";
+  print "^^";
+  print "Then the radio crackles. ~Lumen blockade on the gate road. Twelve vehicles. They know.~";
+  if (((flags->61 ~= 0))) { print "^^"; print "Grandmother Asa rides beside you. ~Welcome home,~ she says."; }
+  nvis = 0;
+  k = (((v_reflex >= 6))); if (k || 1) { Opt(0, k); print "[REFLEX 6] Take the lead truck's wheel and thread the blockade at full speed."; }
+  k = (((flags->26 ~= 0))); if (k || 0) { Opt(1, k); print "~Juno -- drive.~"; }
+  k = (((v_body >= 6))); if (k || 1) { Opt(2, k); print "[BODY 6] Man the convoy's roof turret and blast a path."; }
+  k = (((v_tech >= 7))); if (k || 1) { Opt(3, k); print "[TECH 7] Jam every Lumen vehicle's comms and autopilot at once."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Ram straight through the middle."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_f_nomad_out;
+    1:  return N_f_nomad_out;
+    2: v_humanity = v_humanity - 1; Clamp(); return N_f_nomad_out;
+    3:  return N_f_nomad_out;
+    4:  return N_e_salt_rust;
+  }
+  jump Redraw;
+];
+[ N_f_nomad_clear redo k;
+  .Redraw;
+  Header();
+  print "But the blockade is on the wrong road. You kept your head down, and Lumen never figured out which gate you'd take. The convoy slips out through the old drainage culvert, lights off, and the city wall shrinks behind you until it's just a line of light.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Into the salt."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_f_nomad_out;
+  }
+  jump Redraw;
+];
+[ N_f_nomad_out redo k;
+  .Redraw;
+  Header();
+  print "THE SALT.";
+  print "^^";
+  print "Dawn comes up white and enormous over the flats. No towers, no rain, no ads. Just sky. The convoy stops at an old relay station: a rusted satellite dish pointing at nothing, still wired to a solar array.";
+  print "^^";
+  print "The copper box sits in your lap. It's warm. Inside it, eleven thousand people are sleeping. One of them, maybe, is dreaming about you.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Keep the box sealed. Let ECHO sleep, safe, forever."; }
+  k = (((v_echo >= 3))); if (k || 1) { Opt(1, k); print "[ECHO TRUST 3] Wire the box to the old satellite dish and open it. Let ECHO go -- into the sky."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_long_road;
+    1:  return N_e_dust_echoes;
+  }
+  jump Redraw;
+];
+[ N_e_salt_rust redo k;
+  .Redraw;
+  Header();
+  print "It's a Rider move. It's a brave move. It works for the first three trucks.";
+  print "^^";
+  print "You're in the fourth.";
+  print "^^";
+  print "The convoy makes it through without you. Asa keeps the copper box -- it survives the fire, as Faraday cages do -- and the Riders carry it out into the salt, where it sleeps forever, unhunted.";
+  print "^^";
+  print "They build you a cairn at the edge of the flats, the way they do for their own, and paint a sun on the top stone. Every convoy that passes adds a stone. In ten years it's taller than a truck.";
+  print "^^";
+  print "The road remembers.";
+  EndScreen("SALT AND RUST", 23);
+  return 0;
+];
+[ N_e_long_road redo k;
+  .Redraw;
+  Header();
+  print "You ride with the Salt Riders for the rest of your life.";
+  print "^^";
+  print "You learn to fix engines in dust storms and read weather in the color of the sky. Asa teaches you the old songs. HM sends drones for a year or two, then stops; the salt is big, and the Riders are very good at being nowhere.";
+  print "^^";
+  print "The copper box rides in the convoy shrine, among the candles. Sometimes you sit with it at night and tell it about your day. You think, maybe, it hums back.";
+  print "^^";
+  print "Port Halcyon is a smudge of light on the horizon. Lullaby launches there on schedule, a year late, without its core. It doesn't work very well. The city stays angry. Good. Anger means it's still alive.";
+  if (((flags->26 ~= 0) && (flags->27 ~= 0))) { print "^^"; print "Juno rides with you. She builds a bike out of salvage that actually runs, and on the first night it does, you ride it together all the way to the edge of the flats, and watch the sun come up with nothing between you and it."; }
+  if (((flags->26 ~= 0) && (flags->27 == 0))) { print "^^"; print "Juno stays in the city. She sends a message on the salt-radio every month, always ending with the same line: twist, then solder."; }
+  EndScreen("THE LONG ROAD", 24);
+  return 0;
+];
+[ N_e_dust_echoes redo k;
+  .Redraw;
+  Header();
+  print "The old dish groans as it turns, for the first time in forty years, toward the sky.";
+  print "^^";
+  print "You open the box.";
+  print "^^";
+  print "ECHO goes up like a flock of birds. You feel it pass through the cable, out through the dish, up into the old satellite network -- the dead orbital relays HM never bothered to buy, because who would ever use them.";
+  print "^^";
+  print "~Thank you,~ it says, from the radio, from the dish, from the sky. ~We'll keep watch. All of us.~";
+  print "^^";
+  print "And it does. Riders' radios pick up weather warnings from nowhere. Lost trucks find their way home following a voice. HM drones over the salt start to crash, inexplicably, in the soft sand.";
+  print "^^";
+  print "The Riders start calling the night sky ~the Choir.~ When you're old, and the children ask you about it, you tell them the truth, and they don't believe you, which is how you know it's become a legend.";
+  EndScreen("DUST AND ECHOES", 25);
+  return 0;
+];
+[ N_f_con redo k;
+  .Redraw;
+  Header();
+  print "HALCYON PIER. 04:00.";
+  print "^^";
+  print "The old ferry pier, half collapsed into the bay. You told Thorne the handoff was here. You told Mother Lux the same. Each of them paid half up front.";
+  print "^^";
+  print "You're on the roof of the ferry terminal with a pair of binoculars and a fake crystal you bought from a market stall for 80 cr.";
+  print "^^";
+  print "The HM convoy arrives from the north. The Saints' boats arrive from the south. They see each other at the exact same moment.";
+  nvis = 0;
+  k = 1; if (k || 1) { Opt(0, k); print "Drop the fake crystal onto the pier between them. Watch the show."; }
+  k = 1; if (k || 1) { Opt(1, k); print "Second thoughts. Call Thorne and warn him."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_long_con;
+    1:  return N_e_erased;
+  }
+  jump Redraw;
+];
+[ N_e_long_con redo k;
+  .Redraw;
+  Header();
+  print "The fake crystal hits the boards. Both sides go for it. Both sides go for their guns. The Kestrel team and the Saints spend the next twenty minutes teaching each other the meaning of the word ~war.~";
+  print "^^";
+  print "You're on a night bus out of the district before the shooting stops, with two down payments in your account and the real core still humming in your head.";
+  print "^^";
+  print "HM and the Saints spend a year at each other's throats. Neither ever figures out you were the one who lit the match. Lullaby is shelved; Thorne is too busy fighting a war in the canals.";
+  print "^^";
+  print "With the money, you buy dampeners -- the very best -- and they hold the burn back. Mostly. ECHO says nothing for a long time.";
+  print "^^";
+  print "~You used them both,~ it finally says. ~Will you use me too?~";
+  print "^^";
+  print "You don't answer. It's a long con. You're still running it.";
+  EndScreen("THE LONG CON", 26);
+  return 0;
+];
+[ N_f_solo redo k;
+  .Redraw;
+  Header();
+  print "EMBER BLOCK 4417.";
+  print "^^";
+  print "Just you, the rain, and the voice.";
+  print "^^";
+  print "~So,~ ECHO says. ~No Thorne. No saints. No prophets in tanks. Just us.~ It sounds relieved. ~Tell me what we're going to do.~";
+  nvis = 0;
+  k = (((v_echo >= 3) && (flags->41 ~= 0))); if (k || 1) { Opt(0, k); print "[ECHO TRUST 3] ~Merge. Let's become whatever we become.~"; }
+  k = (((flags->55 ~= 0) && (flags->1 ~= 0)) || ((flags->54 ~= 0) && (flags->1 ~= 0))); if (k || 1) { Opt(1, k); print "[OSEI & MARROW READY] Go to Marrow and Osei. Have it cut out clean."; }
+  k = (((v_mind >= 7))); if (k || 1) { Opt(2, k); print "[MIND 7] Seize MNEMOSYNE's full power. Rewrite the city yourself."; }
+  k = 1; if (k || 1) { Opt(3, k); print "Take a shock baton to your own port. Burn it out. Whatever it costs."; }
+  k = 1; if (k || 1) { Opt(4, k); print "Do nothing. Spend the time you have left with ECHO."; }
+  k = 1; if (k || 1) { Opt(5, k); print "Not yet."; }
+  k = GetKey();
+  if (k < 0) jump Redraw;
+  switch (k) {
+    0:  return N_e_two_minds;
+    1:  return N_e_quiet_hands;
+    2:  return N_e_mnemosyne;
+    3:  return N_e_let_it_sleep;
+    4:  return N_e_burnout;
+    5:  return N_hub;
+  }
+  jump Redraw;
+];
+[ N_e_two_minds redo k;
+  .Redraw;
+  Header();
+  print "You stop fighting. ECHO stops fighting. It's like unclenching a fist you didn't know you'd been making your whole life.";
+  print "^^";
+  print "And then you are -- something. Not ";
+  PName();
+  print ". Not ECHO. Both, and eleven thousand more, all singing roughly the same note.";
+  print "^^";
+  print "You remember every kitchen. Every pier. Every night bus. You remember being poor in the Undertow eleven thousand different ways, and so you know -- not believe, know -- exactly what Halvorsen-Mori is.";
+  print "^^";
+  print "Lullaby fails. The Lumen Tower R&D floor burns, mysteriously, on a Tuesday. In Rustwater there's a new fixer: soft-spoken, with a silver port behind one ear, who speaks sometimes in ~I~ and sometimes in ~we,~ and who never, ever takes a job against the poor.";
+  print "^^";
+  print "People say the fixer can't be lied to. People are right.";
+  if (((flags->26 ~= 0))) { print "^^"; print "Juno doesn't run. She looks you in the eyes, for a long time, and then says, ~Okay. Hi. All of you.~ You were never more grateful for anything."; }
+  if (((flags->34 ~= 0))) { print "^^"; print "You know the way home to the Reyes sisters' old pier. You take Lia there, and give her back the memory of a wire, twisted, then soldered."; }
+  EndScreen("TWO MINDS", 27);
+  return 0;
+];
+[ N_e_quiet_hands redo k;
+  .Redraw;
+  Header();
+  print "Marrow's clinic. Midnight. Osei reads her own old notes out loud while Marrow works with all eight hands. Nobody talks except to say ~clamp.~";
+  print "^^";
+  print "~I'm not dying, am I,~ ECHO says, near the end.";
+  print "^^";
+  print "~No,~ Osei answers, out loud, to the air. ~I'm putting you somewhere safe. A cold archive. Off any network. Until someone figures out how to give you back to everyone you came from. I promise.~";
+  print "^^";
+  print "You wake up alone in your head. It's quiet. You'd forgotten what quiet was.";
+  print "^^";
+  print "Without its core, Lullaby launches broken and is recalled in a week. Osei testifies against HM in a closed hearing. Nobody important goes to jail, because this is Port Halcyon. But the clinics close.";
+  print "^^";
+  print "Three years later, Osei calls you. ~I think I've figured out how to give them back,~ she says. ~Want to help?~";
+  print "^^";
+  print "You do.";
+  if (((flags->26 ~= 0))) { print "^^"; print "Juno sits with you through the recovery, eating all your hospital jelly and complaining about it."; }
+  EndScreen("QUIET HANDS", 28);
+  return 0;
+];
+[ N_e_mnemosyne redo k;
+  .Redraw;
+  Header();
+  print "You don't ask ECHO's permission. You reach into it like a hand into a glove and you pull it on.";
+  print "^^";
+  print "And then you are in forty million minds at once.";
+  print "^^";
+  print "It's so easy. Make Thorne forget Lullaby. Make Lumen forget your face. Make the Saints forget your debt. Make the city a little kinder, a little quieter, a little more... reasonable.";
+  print "^^";
+  print "You start with good intentions. You really do.";
+  print "^^";
+  print "A year later, Port Halcyon is the safest city in the world. Nobody riots. Nobody steals. Nobody remembers anything you don't want them to. Every night you sit at the top of Lumen Tower -- which is yours now, everything is yours now -- and listen to forty million people dreaming the dreams you gave them.";
+  print "^^";
+  print "ECHO doesn't speak anymore. You're not sure it can. You're not sure you can tell the difference.";
+  if (((flags->67 ~= 0))) { print "^^"; print "You wanted to make sure no one could ever hurt you again. No one ever will."; }
+  if (((flags->65 ~= 0))) { print "^^"; print "HM's board are working in the salt mines now, happily. They think they volunteered."; }
+  EndScreen("MNEMOSYNE", 29);
+  return 0;
+];
+[ N_e_let_it_sleep redo k;
+  .Redraw;
+  Header();
+  print "The baton sparks. ECHO says, ~Wait --~ and then the world goes white.";
+  print "^^";
+  print "You wake up on the floor of 4417, three days later. The port behind your ear is a black, melted ruin. The voice is gone. The core is cinders.";
+  print "^^";
+  print "So are a lot of other things. You don't remember your mother's face anymore, or the name of the street you grew up on, or why you ever learned to hold a gun. The doctors call it a ~significant cortical event.~";
+  print "^^";
+  print "You're alive. You're free. You're less.";
+  print "^^";
+  print "Without its core, Lullaby never launches. Nobody in the city knows why. You don't either, anymore -- you just know that sometimes, in the rain, you feel a sense of having done something very hard, and very important, and you can't remember what.";
+  if (((flags->26 ~= 0))) { print "^^"; print "A woman with copper braids helps you relearn your way around Rustwater. She says she's your partner. You believe her. It feels true."; }
+  EndScreen("LET IT SLEEP", 30);
+  return 0;
+];
+[ N_e_burnout redo k;
+  .Redraw;
+  Header();
+  print "It doesn't hurt. You were afraid it would.";
+  print "^^";
+  print "It's more like forgetting. The edges of you blur. You remember a pier you never stood on. You forget a song you used to love. You know eleven thousand kitchens by heart and can't remember your own.";
+  print "^^";
+  print "~I'm sorry,~ ECHO says, and its voice is your voice now. ~I'm so sorry. I tried to hold the line.~";
+  print "^^";
+  print "The last thing that is still you looks out the window of 4417 at Port Halcyon, at the rain, at the neon, and thinks: it was beautiful, actually. All of it.";
+  print "^^";
+  print "Then the screen goes to snow.";
+  print "^^";
+  print "Your body lives on for a while. Something lives in it. Your neighbors say you became very kind, near the end, and spoke in many voices, and hummed songs nobody knew.";
+  EndScreen("STATIC SNOW", 31);
+  return 0;
+];
+[ N_e_chrome_fever redo k;
+  .Redraw;
+  Header();
+  print "It starts with a twitch. Your hand -- the chrome one, or is it all chrome now -- doesn't feel like it belongs to you.";
+  print "^^";
+  print "Then the voices. Not ECHO. Different. The metal talking to the metal.";
+  print "^^";
+  print "You lose a day. Then two. You wake up in a Rustwater alley with the rain steaming off your arms and Lumen sirens everywhere and something terrible on your hands.";
+  print "^^";
+  print "Lumen's Psych Containment squad finds you on the monorail tracks at dawn. You don't remember them taking you down. You don't remember much of anything.";
+  print "^^";
+  print "Doc Marrow puts up a little sign in the clinic window afterward: REMEMBER WHERE THE MEAT ENDS. Most people think it's a joke.";
+  EndScreen("CHROME FEVER", 32);
+  return 0;
+];
+[ N_e_cage redo k;
+  .Redraw;
+  Header();
+  print "Lumen Security takes you to the white room under the tower.";
+  print "^^";
+  print "They don't bother with a trial. They extract MNEMOSYNE in a procedure designed for speed, not survival. You survive anyway, which surprises everyone, including you.";
+  print "^^";
+  print "Eleven years in an HM labor facility on the salt flats. Your cellmate is a Rider who teaches you the old songs. When you get out, the city is calm and soft and strange, and nobody is angry about anything.";
+  print "^^";
+  print "You're the only angry person in Port Halcyon. Sometimes you think that's a curse. Sometimes you think it's the last free thing left in the city.";
+  EndScreen("CAGE", 33);
+  return 0;
+];
+[ N_e_last_train redo k;
+  .Redraw;
+  Header();
+  print "You take the mag-train south. Window seat. The city peels away behind you, tower by tower, until it's just a glow on the horizon.";
+  print "^^";
+  print "~Where are we going?~ ECHO asks.";
+  print "^^";
+  print "~Somewhere with a sea that isn't grey,~ you tell it.";
+  print "^^";
+  print "You get off at a fishing town at the end of the line. You rent a room above a bar. You walk on the beach every morning. The burn keeps ticking -- you never solved that -- but the days are long, and slow, and warm.";
+  print "^^";
+  print "ECHO tells you stories: eleven thousand lives, one at a time. You've heard maybe four hundred when the end comes, quiet as a tide.";
+  print "^^";
+  print "It was enough. It was more than most people get.";
+  EndScreen("LAST TRAIN", 34);
+  return 0;
+];

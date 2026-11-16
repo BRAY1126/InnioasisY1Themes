@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEON ASH</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #07060b; color: #d8d4e8; }
+  body { font-family: "Courier New", Courier, monospace; font-size: 17px; line-height: 1.5; }
+  body.small { font-size: 14px; } body.large { font-size: 21px; }
+  #wrap { max-width: 760px; margin: 0 auto; padding: 12px 14px 40px; }
+  #status { position: sticky; top: 0; background: #07060bee; border-bottom: 1px solid #ff2e88;
+            padding: 6px 0; font-size: 0.78em; color: #3ef0ff; z-index: 2; }
+  #status .burn { color: #ffd23e; } #status .hot { color: #ff2e88; }
+  #text p { margin: 0 0 1em; }
+  #text p:first-child { color: #ffd23e; letter-spacing: 1px; }
+  .fade { animation: fade .35s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  #choices { list-style: none; margin: 1.2em 0 0; padding: 0; }
+  #choices li { margin: 0 0 8px; }
+  #choices button { width: 100%; text-align: left; font: inherit; color: #d8d4e8; background: #12101c;
+            border: 1px solid #2b2540; border-left: 3px solid #ff2e88; padding: 8px 10px; cursor: pointer; }
+  #choices button:hover, #choices button:focus { outline: none; background: #1e1830; border-color: #3ef0ff;
+            border-left-color: #3ef0ff; color: #fff; }
+  #choices button .n { color: #ffd23e; margin-right: 6px; }
+  #choices button .tag { color: #3ef0ff; margin-right: 4px; }
+  #choices button.locked { color: #5b5670; border-left-color: #3a344d; cursor: not-allowed; }
+  #choices button.locked .tag { color: #6d4a5d; }
+  .end-title { color: #ff2e88; font-size: 1.4em; letter-spacing: 3px; margin: 1em 0 .2em; }
+  .end-tone { color: #8b85a3; font-size: .8em; text-transform: uppercase; margin-bottom: 1em; }
+  .logo { color: #ff2e88; text-shadow: 0 0 8px #ff2e8866; white-space: pre; font-size: .7em;
+          line-height: 1.15; overflow-x: auto; margin: 20px 0 6px; }
+  .sub { color: #3ef0ff; margin-bottom: 1.5em; }
+  input[type=text] { font: inherit; background: #12101c; color: #fff; border: 1px solid #3ef0ff;
+          padding: 8px; width: 100%; box-sizing: border-box; margin: 8px 0 14px; }
+  .codex div { padding: 2px 0; } .codex .got { color: #3ef0ff; } .codex .no { color: #4a455c; }
+  #tools { margin-top: 28px; font-size: .75em; color: #6d6785; }
+  #tools a { color: #8b85a3; margin-right: 14px; cursor: pointer; text-decoration: underline; }
+  .msg { color: #ff2e88; min-height: 1.2em; font-size: .85em; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="status"></div>
+  <div id="text"></div>
+  <ul id="choices"></ul>
+  <div class="msg" id="msg"></div>
+  <div id="tools">
+    <a id="t-title">title screen</a><a id="t-size">text size</a><a id="t-save">save</a><a id="t-load">load</a>
+  </div>
+</div>
+<script>
+var STORY = /*__STORY__*/null;
+(function () {
+  "use strict";
+  var KEY = "neonash_v1_", N = STORY.nodes;
+  var CLAMP = { body:[0,10], reflex:[0,10], tech:[0,10], mind:[0,10], nerve:[0,10],
+                humanity:[0,10], heat:[0,99], burn:[0,99], money:[0,1e9] };
+  var TERM = /^([a-z_][a-z0-9_]*)\s*(>=|<=|==|!=|>|<)\s*(-?\d+)$/;
+  var FXV = /^([a-z_][a-z0-9_]*)([+\-=])(-?\d+)$/, FXF = /^([+\-])([a-z_][a-z0-9_]*)$/;
+  var S = null; // state: {name, vars, flags:{}, node}
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---- storage (works even where localStorage is blocked) ----
+  var mem = {};
+  function store(k, v) { try { localStorage.setItem(KEY + k, v); } catch (e) { mem[k] = v; } }
+  function fetchK(k) { try { var v = localStorage.getItem(KEY + k); return v === null ? mem[k] : v; }
+                       catch (e) { return mem[k]; } }
+  function drop(k) { try { localStorage.removeItem(KEY + k); } catch (e) {} delete mem[k]; }
+
+  // ---- engine ----
+  function cmp(a, op, b) {
+    return op === ">=" ? a >= b : op === "<=" ? a <= b : op === "==" ? a === b :
+           op === "!=" ? a !== b : op === ">" ? a > b : a < b;
+  }
+  function cond(s) {
+    if (!s) return true;
+    var ors = s.split("|");
+    for (var i = 0; i < ors.length; i++) {
+      var ands = ors[i].split("&"), ok = true;
+      for (var j = 0; j < ands.length && ok; j++) {
+        var t = ands[j].replace(/^\s+|\s+$/g, ""), m;
+        if (t.charAt(0) === "!") ok = !S.flags[t.slice(1)];
+        else if ((m = TERM.exec(t))) ok = cmp(S.vars[m[1]] || 0, m[2], parseInt(m[3], 10));
+        else ok = !!S.flags[t];
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+  function apply(fx) {
+    if (!fx) return;
+    var toks = fx.split(/\s+/);
+    for (var i = 0; i < toks.length; i++) {
+      var t = toks[i], m;
+      if ((m = FXV.exec(t))) {
+        var k = m[1], n = parseInt(m[3], 10), v = S.vars[k] || 0;
+        v = m[2] === "=" ? n : m[2] === "+" ? v + n : v - n;
+        var c = CLAMP[k]; if (c) v = Math.max(c[0], Math.min(c[1], v));
+        S.vars[k] = v;
+      } else if ((m = FXF.exec(t))) {
+        if (m[1] === "+") S.flags[m[2]] = 1; else delete S.flags[m[2]];
+      }
+    }
+  }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  function sub(s) {
+    return s.replace(/\{([a-z_]+)\}/g, function (all, k) {
+      if (k === "name") return S.name;
+      if (S.vars.hasOwnProperty(k)) return k === "money" ? fmt(S.vars[k]) : S.vars[k];
+      return all;
+    });
+  }
+  function go(id, depth) {
+    depth = depth || 0;
+    var n = N[id]; S.node = id; apply(n.fx);
+    var r = n.route || [];
+    for (var i = 0; i < r.length; i++) if (cond(r[i][0])) return go(r[i][1], depth + 1);
+    if (!n.ending) store("save", JSON.stringify(S));
+  }
+  function choose(i) {
+    var c = N[S.node].choices[i]; apply(c.fx); go(c.to); render();
+  }
+
+  // ---- rendering ----
+  var focusIdx = 0, buttons = [];
+  function paras(t) {
+    var out = "", ps = t.split("\n\n");
+    for (var i = 0; i < ps.length; i++) if (ps[i]) out += "<p>" + esc(ps[i]).replace(/\n/g, "<br>") + "</p>";
+    return out;
+  }
+  function setChoices(list) { // list of {html, cls, fn}
+    var ul = $("choices"); ul.innerHTML = ""; buttons = [];
+    for (var i = 0; i < list.length; i++) {
+      var li = document.createElement("li"), b = document.createElement("button");
+      b.innerHTML = '<span class="n">' + (i + 1) + ".</span>" + list[i].html;
+      if (list[i].cls) b.className = list[i].cls;
+      b.onclick = (function (it) { return function () { $("msg").innerHTML = ""; it.fn(); }; })(list[i]);
+      li.appendChild(b); ul.appendChild(li); buttons.push(b);
+    }
+    focusIdx = 0;
+    if (buttons.length) try { buttons[0].focus({ preventScroll: true }); } catch (e) {}
+  }
+  function statusBar() {
+    if (!S) { $("status").innerHTML = "PORT HALCYON // 2091"; return; }
+    var v = S.vars;
+    var h = esc(S.name) + " &nbsp;|&nbsp; BODY " + (v.body||0) + " &middot; REF " + (v.reflex||0) +
+            " &middot; TECH " + (v.tech||0) + " &middot; MIND " + (v.mind||0) + " &middot; NERVE " +
+            (v.nerve||0) + " &nbsp;|&nbsp; &cent;" + fmt(v.money||0);
+    if (S.flags.chip) h += '<br><span class="burn">BURN ' + (v.burn||0) + "/" + STORY.max_burn +
+            '</span> &middot; <span class="' + ((v.heat||0) >= 4 ? "hot" : "") + '">HEAT ' + (v.heat||0) +
+            "</span> &middot; HUMANITY " + (v.humanity||0) + "/10";
+    $("status").innerHTML = h;
+  }
+  function anim() { var t = $("text"); t.className = ""; void t.offsetWidth; t.className = "fade"; }
+
+  function render() {
+    var n = N[S.node]; statusBar(); anim();
+    var parts = [n.text || ""], ex = n.extra || [];
+    for (var i = 0; i < ex.length; i++) if (cond(ex[i][0])) parts.push(ex[i][1]);
+    var html = paras(sub(parts.join("\n\n")));
+    if (n.ending) {
+      var found = endingsFound();
+      if (found.indexOf(S.node) < 0) { found.push(S.node); store("endings", JSON.stringify(found)); }
+      drop("save");
+      html += '<div class="end-title">ENDING: ' + esc(n.ending.title) + "</div>" +
+              '<div class="end-tone">' + esc(n.ending.tone) + " &middot; endings discovered: " +
+              found.length + " / " + STORY.endings.length + "</div>";
+      $("text").innerHTML = html;
+      setChoices([{ html: "Return to the title screen.", fn: title },
+                  { html: "View discovered endings.", fn: codex }]);
+      window.scrollTo(0, 0); return;
+    }
+    $("text").innerHTML = html;
+    var cs = n.choices || [], list = [];
+    for (var j = 0; j < cs.length; j++) {
+      var c = cs[j];
+      if (c.hideif && cond(c.hideif)) continue;
+      var ok = cond(c.need);
+      if (c.hide && !ok) continue;
+      list.push({
+        html: (c.tag ? '<span class="tag">' + esc(c.tag) + "</span>" : "") + esc(sub(c.t)),
+        cls: ok ? "" : "locked",
+        fn: ok ? (function (k) { return function () { choose(k); }; })(j)
+               : function () { $("msg").innerHTML = "You don't have what it takes for that. Yet."; }
+      });
+    }
+    setChoices(list);
+    window.scrollTo(0, 0);
+  }
+
+  function endingsFound() { try { return JSON.parse(fetchK("endings") || "[]"); } catch (e) { return []; } }
+
+  // ---- screens ----
+  var LOGO = " _  _ ___ ___  _  _     _   ___ _  _\n| \\| | __/ _ \\| \\| |   /_\\ / __| || |\n" +
+             "| .` | _| (_) | .` |  / _ \\\\__ \\ __ |\n|_|\\_|___\\___/|_|\\_| /_/ \\_\\___/_||_|";
+  function title() {
+    S = null; statusBar(); anim();
+    $("text").innerHTML = '<div class="logo">' + esc(LOGO) + '</div><div class="sub">a text adventure ' +
+      "in Port Halcyon, 2091</div><p>Every choice matters. " + STORY.endings.length +
+      " endings. Stats unlock options. Nothing stops you from walking away -- or from walking " +
+      "into something you can't walk out of.</p><p>Keys: 1-9 to choose, arrows + Enter to move.</p>";
+    var list = [{ html: "New game", fn: newGame }];
+    if (fetchK("save")) list.push({ html: "Continue", fn: function () {
+      try { S = JSON.parse(fetchK("save")); render(); } catch (e) { $("msg").innerHTML = "Save is corrupt."; }
+    } });
+    list.push({ html: "Endings discovered (" + endingsFound().length + "/" + STORY.endings.length + ")", fn: codex });
+    setChoices(list);
+  }
+  function newGame() {
+    anim();
+    $("text").innerHTML = "<p>IDENTIFY YOURSELF</p><p>What do they call you on the street?</p>" +
+      '<input type="text" id="nm" maxlength="24" placeholder="V0id" autocomplete="off">';
+    var start = function () {
+      var nm = ($("nm").value || "").replace(/^\s+|\s+$/g, "") || "V0id";
+      S = { name: nm, vars: {}, flags: {}, node: null }; go(STORY.start); render();
+    };
+    setChoices([{ html: "Jack in.", fn: start }, { html: "Back.", fn: title }]);
+    var inp = $("nm"); try { inp.focus(); } catch (e) {}
+    inp.onkeydown = function (e) { if ((e.keyCode || e.which) === 13) { e.preventDefault(); start(); } };
+  }
+  function codex() {
+    S = null; statusBar(); anim();
+    var f = endingsFound(), h = "<p>ENDINGS DISCOVERED: " + f.length + " / " + STORY.endings.length +
+            '</p><div class="codex">';
+    for (var i = 0; i < STORY.endings.length; i++) {
+      var e = STORY.endings[i];
+      h += f.indexOf(e.id) >= 0 ? '<div class="got">&#9670; ' + esc(e.title) + "</div>"
+                                : '<div class="no">&#9671; ?????</div>';
+    }
+    $("text").innerHTML = h + "</div>";
+    setChoices([{ html: "Back.", fn: title }]);
+  }
+
+  // ---- input ----
+  document.onkeydown = function (e) {
+    var k = e.keyCode || e.which, tgt = e.target || e.srcElement;
+    if (tgt && tgt.tagName === "INPUT") return;
+    if (k >= 49 && k <= 57) { var b = buttons[k - 49]; if (b) { b.click(); e.preventDefault(); } return; }
+    if (k >= 97 && k <= 105) { var b2 = buttons[k - 97]; if (b2) { b2.click(); e.preventDefault(); } return; }
+    if (!buttons.length) return;
+    if (k === 40 || k === 39) { focusIdx = (focusIdx + 1) % buttons.length; buttons[focusIdx].focus(); e.preventDefault(); }
+    if (k === 38 || k === 37) { focusIdx = (focusIdx - 1 + buttons.length) % buttons.length; buttons[focusIdx].focus(); e.preventDefault(); }
+  };
+  $("t-title").onclick = title;
+  $("t-size").onclick = function () {
+    var b = document.body, c = b.className;
+    b.className = c === "" ? "large" : c === "large" ? "small" : "";
+    store("size", b.className);
+  };
+  $("t-save").onclick = function () {
+    if (S && !N[S.node].ending) { store("manual", JSON.stringify(S)); $("msg").innerHTML = "Saved."; }
+  };
+  $("t-load").onclick = function () {
+    var d = fetchK("manual");
+    if (d) { S = JSON.parse(d); render(); $("msg").innerHTML = "Loaded."; } else $("msg").innerHTML = "No manual save.";
+  };
+  document.body.className = fetchK("size") || "";
+  title();
+})();
+</script>
+</body>
+</html>
